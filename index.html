@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="sl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b3a63">
+<title>Elektro okvare</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root{--b:#0b3a63;--b2:#082844;--bg:#eef3f7;--card:#fff;--line:#d7e0e7;--red:#c62828;--orange:#ef8b18;--green:#25824a;--text:#17232e;--muted:#687a88}
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--text)}button,input,select,textarea{font:inherit}
+header{position:sticky;top:0;z-index:1200;background:linear-gradient(135deg,var(--b2),var(--b));color:#fff;padding:10px 10px 8px;box-shadow:0 2px 12px #0003}
+.head{display:flex;justify-content:space-between;align-items:center;gap:8px;max-width:1400px;margin:auto}.head h1{font-size:19px;margin:0}.head small{opacity:.8}.state{font-size:12px;font-weight:700;background:#ffffff1e;border-radius:999px;padding:7px 9px}
+nav{max-width:1400px;margin:8px auto 0;display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
+nav button{border:0;border-radius:11px;min-height:48px;background:#ffffff16;color:#fff;font-weight:800;font-size:12px;padding:6px;cursor:pointer}nav button.active{background:#fff;color:var(--b)}
+main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{display:block}
+.mapwrap{position:relative;background:#dbe5ea;border-radius:15px;overflow:hidden;border:1px solid var(--line);box-shadow:0 6px 22px #123a631c}
+#map{height:calc(100dvh - 190px);min-height:480px}.mapmsg{position:absolute;left:10px;bottom:10px;z-index:700;background:#fffc;border-radius:9px;padding:7px 9px;font-size:12px;font-weight:700}
+.maptools{position:absolute;right:10px;top:10px;z-index:700;display:flex;flex-direction:column;gap:7px}.maptools button{width:48px;height:48px;border:0;border-radius:12px;background:white;color:var(--b);font-size:20px;box-shadow:0 3px 13px #0003}
+.panel{background:#fff;border:1px solid var(--line);border-radius:15px;padding:12px;box-shadow:0 6px 22px #123a6315}.toolbar{display:grid;grid-template-columns:2fr repeat(3,1fr);gap:7px;margin-bottom:9px}.toolbar input,.toolbar select,.field input,.field select,.field textarea{width:100%;min-height:44px;border:1px solid #c7d2db;border-radius:10px;padding:10px;background:#fff}.field textarea{min-height:90px;resize:vertical}
+.list{display:grid;gap:9px}.card{display:grid;grid-template-columns:7px 1fr auto;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff;cursor:pointer}.bar{width:7px}.body{padding:11px}.title{font-weight:850}.meta{font-size:12px;color:var(--muted);display:flex;gap:8px 12px;flex-wrap:wrap;margin-top:4px}.desc{font-size:13px;margin-top:6px}.side{padding:10px;display:flex;align-items:center}.pill{font-size:11px;font-weight:900;padding:5px 7px;border-radius:999px;background:#edf2f6}.pill.kritično{background:#fde5e5;color:#9b1111}.pill.visoka{background:#fff0dc;color:#9d5100}.empty{text-align:center;color:var(--muted);padding:28px}
+.modal{position:fixed;inset:0;z-index:3000;background:#071b2db8;display:none;align-items:center;justify-content:center;padding:10px}.modal.open{display:flex}.sheet{width:min(900px,100%);max-height:96dvh;background:#fff;border-radius:18px;overflow:auto}.sheethead{position:sticky;top:0;background:#fff;z-index:3;padding:13px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}.sheethead h2{margin:0;font-size:18px}.close{border:0;border-radius:10px;width:40px;height:40px;font-size:18px}.form{padding:14px;display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{display:flex;flex-direction:column;gap:5px}.field.full{grid-column:1/-1}.field label{font-size:12px;font-weight:800;color:#4f6473}.coords{display:grid;grid-template-columns:1fr 1fr;gap:7px}.photos{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:7px}.photo{position:relative;aspect-ratio:1;border-radius:9px;overflow:hidden;background:#ddd}.photo img{width:100%;height:100%;object-fit:cover}.photo button{position:absolute;right:4px;top:4px;width:28px;height:28px;border:0;border-radius:50%;background:#000a;color:#fff}
+.actions{position:sticky;bottom:0;background:#fff;border-top:1px solid var(--line);padding:10px 14px;display:flex;gap:8px;justify-content:flex-end}.btn{border:0;border-radius:11px;min-height:46px;padding:10px 14px;font-weight:850}.primary{background:var(--b);color:#fff}.secondary{background:#e8eef3;color:var(--b2)}.danger{background:#fde8e8;color:#9f1010;margin-right:auto}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.stat{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px}.stat b{display:block;font-size:30px;color:var(--b)}
+.toast{position:fixed;z-index:5000;left:50%;bottom:16px;transform:translate(-50%,25px);opacity:0;background:#15222c;color:#fff;border-radius:10px;padding:10px 13px;font-size:13px;font-weight:700;transition:.2s}.toast.show{opacity:1;transform:translate(-50%,0)}
+@media(max-width:800px){nav{grid-template-columns:repeat(3,1fr)}#map{height:calc(100dvh - 252px);min-height:390px}.toolbar{grid-template-columns:1fr 1fr}.toolbar input{grid-column:1/-1}.stats{grid-template-columns:1fr 1fr}}
+@media(max-width:600px){main{padding:7px}.form{grid-template-columns:1fr}.field.full{grid-column:auto}.sheet{height:100dvh;max-height:100dvh;border-radius:0}.modal{padding:0}.photos{grid-template-columns:repeat(3,1fr)}.card{grid-template-columns:7px 1fr}.side{grid-column:2;padding:0 10px 10px}.toolbar{grid-template-columns:1fr}.toolbar input{grid-column:auto}}
+</style>
+</head>
+<body>
+<header>
+  <div class="head">
+    <div><h1>⚡ Elektro okvare</h1><small>terensko beleženje • GitHub v1.0</small></div>
+    <div class="state" id="netState">● povezano</div>
+  </div>
+  <nav>
+    <button class="active" data-view="mapView">🗺️ ZEMLJEVID</button>
+    <button id="newBtn">➕ NOVA NAPAKA</button>
+    <button data-view="openView">🔴 ODPRTE</button>
+    <button data-view="myView">👷 MOJE</button>
+    <button data-view="closedView">✅ ZAKLJUČENE</button>
+    <button data-view="statsView">📊 STATISTIKA</button>
+  </nav>
+</header>
+
+<main>
+<section id="mapView" class="view active">
+  <div class="mapwrap">
+    <div id="map"></div>
+    <div class="maptools">
+      <button id="gpsBtn" title="Moja lokacija">◎</button>
+      <button id="networkBtn" title="Elektro omrežje">⚡</button>
+    </div>
+    <div class="mapmsg">Tapni na zemljevid za novo napako.</div>
+  </div>
+</section>
+
+<section id="openView" class="view">
+  <div class="panel">
+    <div class="toolbar">
+      <input id="search" placeholder="Išči: objekt, ident, DN, opis ...">
+      <select id="areaFilter"><option value="">Vsa nadzorništva</option><option>Novo mesto</option><option>Metlika</option><option>Trebnje</option><option>Črnomelj</option><option>Šentjernej</option></select>
+      <select id="typeFilter"><option value="">Vse vrste</option></select>
+      <select id="priorityFilter"><option value="">Vse prioritete</option><option>kritično</option><option>visoka</option><option>normalna</option><option>nizka</option></select>
+    </div>
+    <div class="list" id="openList"></div>
+  </div>
+</section>
+
+<section id="myView" class="view"><div class="panel"><div class="field" style="max-width:430px;margin-bottom:10px"><label>Ime monterja</label><input id="myName" placeholder="Vpiši ime ..."></div><div class="list" id="myList"></div></div></section>
+<section id="closedView" class="view"><div class="panel"><div class="list" id="closedList"></div></div></section>
+<section id="statsView" class="view"><div class="stats"><div class="stat"><b id="sOpen">0</b>Odprtih</div><div class="stat"><b id="sCritical">0</b>Kritičnih</div><div class="stat"><b id="sDone">0</b>Odpravljenih</div><div class="stat"><b id="sAll">0</b>Vseh</div></div></section>
+</main>
+
+<div class="modal" id="modal">
+<div class="sheet">
+  <div class="sheethead"><h2 id="formTitle">Nova napaka</h2><button class="close" id="closeBtn">✕</button></div>
+  <form id="issueForm">
+    <div class="form">
+      <input type="hidden" id="issueId">
+      <div class="field"><label>Datum in ura</label><input id="reportedAt" type="datetime-local" required></div>
+      <div class="field"><label>Nadzorništvo</label><select id="area" required><option value="">Izberi ...</option><option>Novo mesto</option><option>Metlika</option><option>Trebnje</option><option>Črnomelj</option><option>Šentjernej</option></select></div>
+      <div class="field full"><label>GPS</label><div class="coords"><input id="lat" inputmode="decimal" required><input id="lng" inputmode="decimal" required></div><button type="button" class="btn secondary" id="formGps">◎ Uporabi trenutno GPS lokacijo</button></div>
+      <div class="field"><label>Objekt / kraj</label><input id="object" placeholder="TP, drog, omarica, kraj ..."></div>
+      <div class="field"><label>Ident objekta</label><input id="ident"></div>
+      <div class="field"><label>Vrsta napake</label><select id="faultType" required></select></div>
+      <div class="field"><label>Prioriteta</label><select id="priority"><option>kritično</option><option>visoka</option><option selected>normalna</option><option>nizka</option></select></div>
+      <div class="field"><label>Status</label><select id="status"><option selected>prijavljeno</option><option>potrjeno</option><option>v obravnavi</option><option>čaka material</option><option>čaka izklop</option><option>odpravljeno</option><option>zaključeno</option></select></div>
+      <div class="field"><label>Maximo DN</label><input id="maximo"></div>
+      <div class="field"><label>Prijavil</label><input id="reportedBy"></div>
+      <div class="field"><label>Monter / izvajalec</label><input id="assignedTo"></div>
+      <div class="field full"><label>Opis napake</label><textarea id="description" required></textarea></div>
+      <div class="field full"><label>Opombe</label><textarea id="notes"></textarea></div>
+      <div class="field full"><label>Fotografije</label><input id="photoInput" type="file" accept="image/*" capture="environment" multiple><div class="photos" id="photos"></div></div>
+    </div>
+    <div class="actions"><button type="button" class="btn danger" id="deleteBtn" style="display:none">Izbriši</button><button type="button" class="btn secondary" id="cancelBtn">Prekliči</button><button class="btn primary">Shrani</button></div>
+  </form>
+</div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function(){
+'use strict';
+var TYPES=['izpad','poškodovan drog','zlomljen drog','pretrgan vodnik','povešen vodnik','drevo na vodu','poškodovana kabelska omarica','pregorela varovalka','okvara TP','kabelska napaka','javna razsvetljava','poškodba zaradi neurja','drugo'];
+var CLOSED=['odpravljeno','zaključeno'];
+var ORANGE=['v obravnavi','čaka material','čaka izklop'];
+var KEY='elektro-okvare-data-v1';
+var issues=[];
+var photos=[];
+var markers={};
+var map=null,gpsMarker=null,gurs=null,gursOn=true,lastGps=null;
+function el(id){return document.getElementById(id)}
+function esc(s){return String(s||'').replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+function uid(){return 'o-'+Date.now()+'-'+Math.random().toString(16).slice(2)}
+function toast(s){var t=el('toast');t.textContent=s;t.classList.add('show');clearTimeout(window.__tt);window.__tt=setTimeout(function(){t.classList.remove('show')},2200)}
+function nowInput(){var d=new Date(),z=function(n){return String(n).padStart(2,'0')};return d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate())+'T'+z(d.getHours())+':'+z(d.getMinutes())}
+function color(x){if(CLOSED.indexOf(x.status)>=0)return '#25824a';if(ORANGE.indexOf(x.status)>=0)return '#ef8b18';return '#c62828'}
+function save(){localStorage.setItem(KEY,JSON.stringify(issues))}
+function load(){try{issues=JSON.parse(localStorage.getItem(KEY)||'[]');if(!Array.isArray(issues))issues=[]}catch(e){issues=[]}}
+function initTypes(){el('faultType').innerHTML='<option value="">Izberi ...</option>'+TYPES.map(function(x){return '<option>'+esc(x)+'</option>'}).join('');el('typeFilter').innerHTML='<option value="">Vse vrste</option>'+TYPES.map(function(x){return '<option>'+esc(x)+'</option>'}).join('')}
+function initMap(){
+  if(!window.L){el('map').innerHTML='<div style="padding:30px">Zemljevida ni bilo mogoče naložiti. Preveri internetno povezavo.</div>';return}
+  map=L.map('map',{zoomControl:true}).setView([45.803,15.168],13);
+  var osm=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
+  gurs=L.tileLayer.wms('https://ipi.eprostor.gov.si/wms-si-gurs-kgi/wms',{
+    layers:'SI.GURS.KGI:LINIJE_ELEKTRICNA_ENERGIJA_G',
+    format:'image/png',
+    transparent:true,
+    version:'1.1.1',
+    opacity:0.9,
+    attribution:'GURS ZKGJI'
+  }).addTo(map);
+  L.control.layers({'OpenStreetMap':osm},{'⚡ Elektro vodi GURS':gurs},{collapsed:true}).addTo(map);
+  map.on('click',function(e){openNew(e.latlng.lat,e.latlng.lng)});
+  setTimeout(function(){map.invalidateSize()},200);
+}
+function iconFor(x){var c=color(x);return L.divIcon({className:'',html:'<div style="width:24px;height:24px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:'+c+';border:3px solid white;box-shadow:0 2px 6px #0006"><span style="display:block;width:6px;height:6px;background:#fff;border-radius:50%;margin:6px"></span></div>',iconSize:[24,24],iconAnchor:[12,24]})}
+function renderMarkers(){
+  if(!map)return;
+  Object.keys(markers).forEach(function(k){map.removeLayer(markers[k])});markers={};
+  issues.forEach(function(x){
+    var a=Number(x.lat),b=Number(x.lng);if(!isFinite(a)||!isFinite(b))return;
+    var m=L.marker([a,b],{icon:iconFor(x)}).addTo(map);
+    m.bindPopup('<b>'+esc(x.type)+'</b><br>'+esc(x.object||x.ident||'')+'<br><small>'+esc(x.area)+' • '+esc(x.status)+'</small><br><button onclick="window.editIssue(\''+x.id+'\')" style="margin-top:7px;padding:7px 9px;border:0;border-radius:7px;background:#0b3a63;color:white">Odpri</button>');
+    markers[x.id]=m;
+  })
+}
+window.editIssue=function(id){var x=issues.find(function(i){return i.id===id});if(x)openEdit(x)}
+function card(x){var dt=x.reportedAt?new Date(x.reportedAt).toLocaleString('sl-SI'):'';return '<div class="card" data-id="'+x.id+'"><div class="bar" style="background:'+color(x)+'"></div><div class="body"><div class="title">'+esc(x.type)+(x.ident?' • '+esc(x.ident):'')+'</div><div class="meta"><span>📍 '+esc(x.object||'brez objekta')+'</span><span>🏢 '+esc(x.area)+'</span><span>🕒 '+esc(dt)+'</span><span>🔧 '+esc(x.status)+'</span>'+(x.maximo?'<span>DN '+esc(x.maximo)+'</span>':'')+'</div>'+(x.description?'<div class="desc">'+esc(x.description)+'</div>':'')+'</div><div class="side"><span class="pill '+esc(x.priority)+'">'+esc(x.priority)+'</span></div></div>'}
+function bindCards(box){box.querySelectorAll('.card').forEach(function(c){c.onclick=function(){window.editIssue(c.dataset.id)}})}
+function renderLists(){
+  var q=el('search').value.trim().toLowerCase(),a=el('areaFilter').value,t=el('typeFilter').value,p=el('priorityFilter').value;
+  var open=issues.filter(function(x){return CLOSED.indexOf(x.status)<0}).filter(function(x){var h=[x.object,x.ident,x.maximo,x.description,x.reportedBy,x.assignedTo].join(' ').toLowerCase();return(!q||h.indexOf(q)>=0)&&(!a||x.area===a)&&(!t||x.type===t)&&(!p||x.priority===p)});
+  el('openList').innerHTML=open.length?open.map(card).join(''):'<div class="empty">Ni odprtih napak.</div>';bindCards(el('openList'));
+  var done=issues.filter(function(x){return CLOSED.indexOf(x.status)>=0});el('closedList').innerHTML=done.length?done.map(card).join(''):'<div class="empty">Ni zaključenih napak.</div>';bindCards(el('closedList'));
+  renderMine()
+}
+function renderMine(){var n=el('myName').value.trim().toLowerCase(),arr=n?issues.filter(function(x){return String(x.assignedTo||'').toLowerCase().indexOf(n)>=0}):[];el('myList').innerHTML=n?(arr.length?arr.map(card).join(''):'<div class="empty">Ni najdenih napak.</div>'):'<div class="empty">Vpiši ime monterja.</div>';bindCards(el('myList'))}
+function stats(){var o=issues.filter(function(x){return CLOSED.indexOf(x.status)<0});el('sOpen').textContent=o.length;el('sCritical').textContent=o.filter(function(x){return x.priority==='kritično'}).length;el('sDone').textContent=issues.length-o.length;el('sAll').textContent=issues.length}
+function renderAll(){renderMarkers();renderLists();stats()}
+function showView(id){document.querySelectorAll('.view').forEach(function(v){v.classList.toggle('active',v.id===id)});document.querySelectorAll('nav button[data-view]').forEach(function(b){b.classList.toggle('active',b.dataset.view===id)});if(id==='mapView'&&map)setTimeout(function(){map.invalidateSize()},100)}
+function resetForm(){el('issueForm').reset();el('issueId').value='';el('reportedAt').value=nowInput();el('priority').value='normalna';el('status').value='prijavljeno';photos=[];renderPhotos();el('deleteBtn').style.display='none'}
+function openNew(lat,lng){resetForm();el('formTitle').textContent='Nova napaka';el('lat').value=Number(lat).toFixed(6);el('lng').value=Number(lng).toFixed(6);el('modal').classList.add('open')}
+function openEdit(x){resetForm();el('formTitle').textContent='Uredi napako';el('issueId').value=x.id;el('reportedAt').value=x.reportedAt||nowInput();el('lat').value=x.lat;el('lng').value=x.lng;el('area').value=x.area||'';el('object').value=x.object||'';el('ident').value=x.ident||'';el('faultType').value=x.type||'';el('priority').value=x.priority||'normalna';el('status').value=x.status||'prijavljeno';el('maximo').value=x.maximo||'';el('reportedBy').value=x.reportedBy||'';el('assignedTo').value=x.assignedTo||'';el('description').value=x.description||'';el('notes').value=x.notes||'';photos=Array.isArray(x.photos)?x.photos.slice():[];renderPhotos();el('deleteBtn').style.display='inline-block';el('modal').classList.add('open')}
+function closeModal(){el('modal').classList.remove('open')}
+function renderPhotos(){el('photos').innerHTML=photos.map(function(s,i){return '<div class="photo"><img src="'+s+'"><button type="button" data-i="'+i+'">✕</button></div>'}).join('');el('photos').querySelectorAll('button').forEach(function(b){b.onclick=function(){photos.splice(Number(b.dataset.i),1);renderPhotos()}})}
+function compress(file){
+  return new Promise(function(resolve,reject){
+    var fr=new FileReader();fr.onload=function(){var im=new Image();im.onload=function(){var w=im.width,h=im.height,m=1100;if(Math.max(w,h)>m){var s=m/Math.max(w,h);w=Math.round(w*s);h=Math.round(h*s)}var c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(im,0,0,w,h);resolve(c.toDataURL('image/jpeg',0.72))};im.onerror=reject;im.src=fr.result};fr.onerror=reject;fr.readAsDataURL(file)
+  })
+}
+async function addPhotos(files){for(var i=0;i<files.length;i++){if(files[i].type.indexOf('image/')!==0)continue;try{photos.push(await compress(files[i]))}catch(e){}}renderPhotos();el('photoInput').value='';toast('Fotografije dodane')}
+function gps(cb,center){if(!navigator.geolocation){toast('GPS ni podprt');return}navigator.geolocation.getCurrentPosition(function(pos){lastGps={lat:pos.coords.latitude,lng:pos.coords.longitude};if(map){if(gpsMarker)map.removeLayer(gpsMarker);gpsMarker=L.circleMarker([lastGps.lat,lastGps.lng],{radius:9,color:'#fff',weight:4,fillColor:'#1976d2',fillOpacity:1}).addTo(map);if(center)map.setView([lastGps.lat,lastGps.lng],17)}if(cb)cb(lastGps);toast('GPS lokacija pridobljena')},function(){toast('GPS lokacije ni bilo mogoče pridobiti')},{enableHighAccuracy:true,timeout:12000,maximumAge:10000})}
+function netState(){el('netState').textContent=navigator.onLine?'● povezano':'● offline'}
+document.querySelectorAll('nav button[data-view]').forEach(function(b){b.onclick=function(){showView(b.dataset.view)}})
+el('newBtn').onclick=function(){var c=lastGps||(map?map.getCenter():{lat:45.803,lng:15.168});openNew(c.lat,c.lng)}
+el('closeBtn').onclick=closeModal;el('cancelBtn').onclick=closeModal;
+el('gpsBtn').onclick=function(){gps(null,true)}
+el('formGps').onclick=function(){gps(function(g){el('lat').value=g.lat.toFixed(6);el('lng').value=g.lng.toFixed(6)},false)}
+el('networkBtn').onclick=function(){if(!map||!gurs)return;if(gursOn){map.removeLayer(gurs);gursOn=false;toast('Elektro omrežje skrito')}else{gurs.addTo(map);gursOn=true;toast('Elektro omrežje prikazano')}}
+el('photoInput').onchange=function(){addPhotos(this.files)}
+el('issueForm').onsubmit=function(e){e.preventDefault();var id=el('issueId').value||uid(),old=issues.find(function(x){return x.id===id});var lat=Number(String(el('lat').value).replace(',','.')),lng=Number(String(el('lng').value).replace(',','.'));if(!isFinite(lat)||!isFinite(lng)){toast('Preveri GPS');return}var x={id:id,createdAt:old?old.createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),reportedAt:el('reportedAt').value,lat:lat,lng:lng,area:el('area').value,object:el('object').value.trim(),ident:el('ident').value.trim(),type:el('faultType').value,priority:el('priority').value,status:el('status').value,maximo:el('maximo').value.trim(),reportedBy:el('reportedBy').value.trim(),assignedTo:el('assignedTo').value.trim(),description:el('description').value.trim(),notes:el('notes').value.trim(),photos:photos.slice()};if(old){issues=issues.map(function(i){return i.id===id?x:i})}else issues.unshift(x);try{save()}catch(err){toast('Premalo lokalnega prostora za slike');return}renderAll();closeModal();showView('mapView');if(map)map.setView([lat,lng],16);toast(old?'Napaka posodobljena':'Napaka shranjena lokalno')}
+el('deleteBtn').onclick=function(){var id=el('issueId').value;if(id&&confirm('Izbrišem napako?')){issues=issues.filter(function(x){return x.id!==id});save();renderAll();closeModal();toast('Napaka izbrisana')}}
+['search','areaFilter','typeFilter','priorityFilter'].forEach(function(id){el(id).addEventListener('input',renderLists);el(id).addEventListener('change',renderLists)});el('myName').oninput=renderMine;
+window.addEventListener('online',netState);window.addEventListener('offline',netState);
+load();initTypes();initMap();renderAll();netState();setTimeout(function(){gps(null,false)},500);
+})();
+</script>
+</body>
+</html>
