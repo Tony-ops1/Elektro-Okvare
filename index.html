@@ -693,7 +693,7 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
 <body>
 <header>
   <div class="head">
-    <div><h1>⚡ Elektro okvare</h1><small>terensko beleženje • GitHub v1.4</small></div>
+    <div><h1>⚡ Elektro okvare</h1><small>terensko beleženje • GitHub v1.5</small></div>
     <div class="state" id="netState">● povezano</div>
   </div>
   <nav>
@@ -709,17 +709,11 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
 <main>
 <section id="mapView" class="view active">
   <div class="mapwrap">
-    <iframe id="mapFallback"
-        title="Rezervni zemljevid"
-        src="https://www.openstreetmap.org/export/embed.html?bbox=15.08%2C45.74%2C15.28%2C45.88&layer=mapnik&marker=45.803%2C15.168"
-        style="position:absolute;inset:0;width:100%;height:100%;border:0;z-index:1;pointer-events:none"
-        loading="eager"></iframe>
-     <div id="map" style="position:relative;z-index:2;background:transparent"></div>
-     <div id="mapDiag" style="position:absolute;left:10px;top:10px;z-index:750;background:rgba(255,255,255,.94);padding:6px 8px;border-radius:8px;font-size:11px;font-weight:800;color:#0b3a63;box-shadow:0 2px 8px #0002">Karta: zagon …</div>
+    <div id="map"></div>
     <div class="maptools">
       <button id="gpsBtn" title="Moja lokacija">◎</button>
     </div>
-    <div class="mapmsg">Tapni na zemljevid za novo napako.</div>
+    <div class="mapmsg">Ortofoto • tapni na zemljevid za novo napako.</div>
   </div>
 </section>
 
@@ -796,74 +790,67 @@ function save(){localStorage.setItem(KEY,JSON.stringify(issues))}
 function load(){try{issues=JSON.parse(localStorage.getItem(KEY)||'[]');if(!Array.isArray(issues))issues=[]}catch(e){issues=[]}}
 function initTypes(){el('faultType').innerHTML='<option value="">Izberi ...</option>'+TYPES.map(function(x){return '<option>'+esc(x)+'</option>'}).join('');el('typeFilter').innerHTML='<option value="">Vse vrste</option>'+TYPES.map(function(x){return '<option>'+esc(x)+'</option>'}).join('')}
 function initMap(){
-  var diag=el('mapDiag');
-  var fallback=el('mapFallback');
-  function status(s){if(diag)diag.textContent='Karta: '+s}
-  function useFallback(msg){
-    status(msg||'rezervni prikaz');
-    if(fallback){fallback.style.pointerEvents='auto';fallback.style.zIndex='3'}
-    var m=el('map'); if(m)m.style.visibility='hidden';
-  }
-
-  status('JavaScript OK');
-
   if(!window.L){
-    useFallback('rezervni zemljevid');
+    el('map').innerHTML='<div style="padding:30px;font-weight:800">Zemljevida ni mogoče naložiti.</div>';
     return;
   }
 
-  try{
-    map=L.map('map',{
-      zoomControl:true,
-      preferCanvas:true,
-      attributionControl:true
-    }).setView([45.803,15.168],14);
-    status('Leaflet OK');
+  map=L.map('map',{
+    zoomControl:true,
+    preferCanvas:true,
+    attributionControl:true
+  }).setView([45.803,15.168],15);
 
-    var loadedTiles=0;
-    var tileErrors=0;
+  var osm=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    maxZoom:19,
+    attribution:'© OpenStreetMap',
+    updateWhenIdle:false,
+    keepBuffer:2
+  });
 
-    var osm=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{
-      maxZoom:19,
-      attribution:'© OpenStreetMap',
+  var ortho=L.tileLayer(
+    'https://gis.level2.si/geoserver/gwc/service/tms/1.0.0/level2%3ADOF025_latest@EPSG%3A3857@jpeg/{z}/{x}/{y}.jpeg',
+    {
+      tms:true,
+      minZoom:8,
+      maxZoom:20,
+      maxNativeZoom:20,
+      attribution:'Ortofoto: GURS / Level2.si',
       updateWhenIdle:false,
       keepBuffer:2
-    });
+    }
+  );
 
-    osm.on('tileload',function(){
-      loadedTiles++;
-      if(loadedTiles===1){
-        status('OpenStreetMap OK');
-        if(fallback){fallback.style.display='none';fallback.style.pointerEvents='none'}
-        var m=el('map'); if(m)m.style.visibility='visible';
-      }
-    });
+  var orthoErrors=0;
+  var switchedToOsm=false;
 
-    osm.on('tileerror',function(){
-      tileErrors++;
-      if(tileErrors===1)status('napaka ploščic');
-    });
+  ortho.on('tileload',function(){
+    orthoErrors=0;
+  });
 
-    osm.addTo(map);
+  ortho.on('tileerror',function(){
+    orthoErrors++;
+    if(orthoErrors>=3 && !switchedToOsm){
+      switchedToOsm=true;
+      try{map.removeLayer(ortho)}catch(e){}
+      osm.addTo(map);
+      toast('Ortofoto trenutno ni dosegljiv – prikazan je navaden zemljevid.');
+    }
+  });
 
-    map.on('click',function(e){openNew(e.latlng.lat,e.latlng.lng)});
+  ortho.addTo(map);
 
-    setTimeout(function(){
-      try{map.invalidateSize(true)}catch(e){}
-      var m=el('map');
-      if(m && (m.clientWidth<100 || m.clientHeight<100)){
-        useFallback('rezervni zemljevid');
-        return;
-      }
-      if(loadedTiles===0){
-        useFallback('rezervni zemljevid');
-      }
-    },3500);
+  L.control.layers(
+    {'Ortofoto GURS':ortho,'Zemljevid':osm},
+    null,
+    {position:'bottomright',collapsed:true}
+  ).addTo(map);
 
-  }catch(err){
-    console.error(err);
-    useFallback('rezervni zemljevid');
-  }
+  map.on('click',function(e){openNew(e.latlng.lat,e.latlng.lng)});
+
+  setTimeout(function(){
+    try{map.invalidateSize(true)}catch(e){}
+  },250);
 }
 
 function iconFor(x){var c=color(x);return L.divIcon({className:'',html:'<div style="width:24px;height:24px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:'+c+';border:3px solid white;box-shadow:0 2px 6px #0006"><span style="display:block;width:6px;height:6px;background:#fff;border-radius:50%;margin:6px"></span></div>',iconSize:[24,24],iconAnchor:[12,24]})}
@@ -902,7 +889,7 @@ function compress(file){
   })
 }
 async function addPhotos(files){for(var i=0;i<files.length;i++){if(files[i].type.indexOf('image/')!==0)continue;try{photos.push(await compress(files[i]))}catch(e){}}renderPhotos();el('photoInput').value='';toast('Fotografije dodane')}
-function gps(cb,center){if(!navigator.geolocation){toast('GPS ni podprt');return}navigator.geolocation.getCurrentPosition(function(pos){lastGps={lat:pos.coords.latitude,lng:pos.coords.longitude};if(map){if(gpsMarker)map.removeLayer(gpsMarker);gpsMarker=L.circleMarker([lastGps.lat,lastGps.lng],{radius:9,color:'#fff',weight:4,fillColor:'#1976d2',fillOpacity:1}).addTo(map);if(center)map.setView([lastGps.lat,lastGps.lng],18)}if(cb)cb(lastGps);toast('GPS lokacija pridobljena')},function(){toast('GPS lokacije ni bilo mogoče pridobiti')},{enableHighAccuracy:true,timeout:12000,maximumAge:10000})}
+function gps(cb,center){if(!navigator.geolocation){toast('GPS ni podprt');return}navigator.geolocation.getCurrentPosition(function(pos){lastGps={lat:pos.coords.latitude,lng:pos.coords.longitude};if(map){if(gpsMarker)map.removeLayer(gpsMarker);gpsMarker=L.circleMarker([lastGps.lat,lastGps.lng],{radius:9,color:'#fff',weight:4,fillColor:'#1976d2',fillOpacity:1}).addTo(map);if(center)map.setView([lastGps.lat,lastGps.lng],19)}if(cb)cb(lastGps);toast('GPS lokacija pridobljena')},function(){toast('GPS lokacije ni bilo mogoče pridobiti')},{enableHighAccuracy:true,timeout:15000,maximumAge:30000})}
 function netState(){el('netState').textContent=navigator.onLine?'● povezano':'● offline'}
 document.querySelectorAll('nav button[data-view]').forEach(function(b){b.onclick=function(){showView(b.dataset.view)}})
 el('newBtn').onclick=function(){var c=lastGps||(map?map.getCenter():{lat:45.803,lng:15.168});openNew(c.lat,c.lng)}
@@ -914,7 +901,7 @@ el('issueForm').onsubmit=function(e){e.preventDefault();var id=el('issueId').val
 el('deleteBtn').onclick=function(){var id=el('issueId').value;if(id&&confirm('Izbrišem napako?')){issues=issues.filter(function(x){return x.id!==id});save();renderAll();closeModal();toast('Napaka izbrisana')}}
 ['search','areaFilter','typeFilter','priorityFilter'].forEach(function(id){el(id).addEventListener('input',renderLists);el(id).addEventListener('change',renderLists)});el('myName').oninput=renderMine;
 window.addEventListener('online',netState);window.addEventListener('offline',netState);
-load();initTypes();initMap();renderAll();netState();setTimeout(function(){gps(null,false)},500);
+load();initTypes();initMap();renderAll();netState();setTimeout(function(){gps(null,true)},500);
 })();
 </script>
 </body>
