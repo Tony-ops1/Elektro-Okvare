@@ -693,7 +693,7 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
 <body>
 <header>
   <div class="head">
-    <div><h1>⚡ Elektro okvare</h1><small>terensko beleženje • GitHub v1.3</small></div>
+    <div><h1>⚡ Elektro okvare</h1><small>terensko beleženje • GitHub v1.4</small></div>
     <div class="state" id="netState">● povezano</div>
   </div>
   <nav>
@@ -709,10 +709,13 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
 <main>
 <section id="mapView" class="view active">
   <div class="mapwrap">
-    <div id="map"></div>
-     <div id="mapError" style="display:none;position:absolute;inset:0;z-index:650;background:#e8eef3;align-items:center;justify-content:center;padding:24px;text-align:center;font-weight:800;color:#0b3a63">
-       Zemljevida ni mogoče naložiti. Preveri internetno povezavo in osveži stran.
-     </div>
+    <iframe id="mapFallback"
+        title="Rezervni zemljevid"
+        src="https://www.openstreetmap.org/export/embed.html?bbox=15.08%2C45.74%2C15.28%2C45.88&layer=mapnik&marker=45.803%2C15.168"
+        style="position:absolute;inset:0;width:100%;height:100%;border:0;z-index:1;pointer-events:none"
+        loading="eager"></iframe>
+     <div id="map" style="position:relative;z-index:2;background:transparent"></div>
+     <div id="mapDiag" style="position:absolute;left:10px;top:10px;z-index:750;background:rgba(255,255,255,.94);padding:6px 8px;border-radius:8px;font-size:11px;font-weight:800;color:#0b3a63;box-shadow:0 2px 8px #0002">Karta: zagon …</div>
     <div class="maptools">
       <button id="gpsBtn" title="Moja lokacija">◎</button>
     </div>
@@ -793,73 +796,76 @@ function save(){localStorage.setItem(KEY,JSON.stringify(issues))}
 function load(){try{issues=JSON.parse(localStorage.getItem(KEY)||'[]');if(!Array.isArray(issues))issues=[]}catch(e){issues=[]}}
 function initTypes(){el('faultType').innerHTML='<option value="">Izberi ...</option>'+TYPES.map(function(x){return '<option>'+esc(x)+'</option>'}).join('');el('typeFilter').innerHTML='<option value="">Vse vrste</option>'+TYPES.map(function(x){return '<option>'+esc(x)+'</option>'}).join('')}
 function initMap(){
-  var errBox=el('mapError');
+  var diag=el('mapDiag');
+  var fallback=el('mapFallback');
+  function status(s){if(diag)diag.textContent='Karta: '+s}
+  function useFallback(msg){
+    status(msg||'rezervni prikaz');
+    if(fallback){fallback.style.pointerEvents='auto';fallback.style.zIndex='3'}
+    var m=el('map'); if(m)m.style.visibility='hidden';
+  }
+
+  status('JavaScript OK');
+
   if(!window.L){
-    if(errBox)errBox.style.display='flex';
+    useFallback('rezervni zemljevid');
     return;
   }
-  map=L.map('map',{zoomControl:true,preferCanvas:true}).setView([45.803,15.168],14);
 
-  var osm=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{
-    maxZoom:19,
-    attribution:'© OpenStreetMap',
-    crossOrigin:true
-  });
+  try{
+    map=L.map('map',{
+      zoomControl:true,
+      preferCanvas:true,
+      attributionControl:true
+    }).setView([45.803,15.168],14);
+    status('Leaflet OK');
 
-  var carto=L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{
-    subdomains:'abcd',
-    maxZoom:20,
-    attribution:'© OpenStreetMap © CARTO',
-    crossOrigin:true
-  });
+    var loadedTiles=0;
+    var tileErrors=0;
 
-  var active=osm;
-  var errors=0;
-  var loaded=false;
+    var osm=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{
+      maxZoom:19,
+      attribution:'© OpenStreetMap',
+      updateWhenIdle:false,
+      keepBuffer:2
+    });
 
-  function markLoaded(){
-    loaded=true;
-    errors=0;
-    if(errBox)errBox.style.display='none';
+    osm.on('tileload',function(){
+      loadedTiles++;
+      if(loadedTiles===1){
+        status('OpenStreetMap OK');
+        if(fallback){fallback.style.display='none';fallback.style.pointerEvents='none'}
+        var m=el('map'); if(m)m.style.visibility='visible';
+      }
+    });
+
+    osm.on('tileerror',function(){
+      tileErrors++;
+      if(tileErrors===1)status('napaka ploščic');
+    });
+
+    osm.addTo(map);
+
+    map.on('click',function(e){openNew(e.latlng.lat,e.latlng.lng)});
+
+    setTimeout(function(){
+      try{map.invalidateSize(true)}catch(e){}
+      var m=el('map');
+      if(m && (m.clientWidth<100 || m.clientHeight<100)){
+        useFallback('rezervni zemljevid');
+        return;
+      }
+      if(loadedTiles===0){
+        useFallback('rezervni zemljevid');
+      }
+    },3500);
+
+  }catch(err){
+    console.error(err);
+    useFallback('rezervni zemljevid');
   }
-
-  osm.on('tileload',markLoaded);
-  carto.on('tileload',markLoaded);
-
-  osm.on('tileerror',function(){
-    errors++;
-    if(errors>=2 && active===osm){
-      try{map.removeLayer(osm)}catch(e){}
-      active=carto;
-      errors=0;
-      carto.addTo(map);
-      toast('Preklop na rezervni zemljevid.');
-    }
-  });
-
-  carto.on('tileerror',function(){
-    errors++;
-    if(errors>=4 && !loaded && errBox)errBox.style.display='flex';
-  });
-
-  osm.addTo(map);
-
-  map.on('click',function(e){openNew(e.latlng.lat,e.latlng.lng)});
-
-  setTimeout(function(){
-    map.invalidateSize(true);
-    if(!loaded && active===osm && errors>0){
-      try{map.removeLayer(osm)}catch(e){}
-      active=carto;
-      carto.addTo(map);
-    }
-  },1800);
-
-  setTimeout(function(){
-    map.invalidateSize(true);
-    if(!loaded && errBox)errBox.style.display='flex';
-  },6000);
 }
+
 function iconFor(x){var c=color(x);return L.divIcon({className:'',html:'<div style="width:24px;height:24px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:'+c+';border:3px solid white;box-shadow:0 2px 6px #0006"><span style="display:block;width:6px;height:6px;background:#fff;border-radius:50%;margin:6px"></span></div>',iconSize:[24,24],iconAnchor:[12,24]})}
 function renderMarkers(){
   if(!map)return;
