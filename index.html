@@ -30,7 +30,7 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
 <body>
 <header>
   <div class="head">
-    <div><h1>⚡ Elektro okvare</h1><small>terensko beleženje • GitHub v1.0</small></div>
+    <div><h1>⚡ Elektro okvare</h1><small>terensko beleženje • GitHub v1.1</small></div>
     <div class="state" id="netState">● povezano</div>
   </div>
   <nav>
@@ -49,10 +49,8 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
     <div id="map"></div>
     <div class="maptools">
       <button id="gpsBtn" title="Moja lokacija">◎</button>
-      <button id="networkBtn" title="Elektro omrežje">⚡</button>
-      <button id="pisoBtn" title="Odpri PISO Novo mesto">P</button>
     </div>
-    <div class="mapmsg">Tapni za novo napako. ⚡ Elektro sloj je viden pri večji povečavi (pribl. 1:15.000 ali bližje).</div>
+    <div class="mapmsg">Tapni na zemljevid za novo napako.</div>
   </div>
 </section>
 
@@ -111,7 +109,7 @@ var KEY='elektro-okvare-data-v1';
 var issues=[];
 var photos=[];
 var markers={};
-var map=null,gpsMarker=null,gurs=null,gursOn=true,lastGps=null;
+var map=null,gpsMarker=null,lastGps=null;
 function el(id){return document.getElementById(id)}
 function esc(s){return String(s||'').replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
 function uid(){return 'o-'+Date.now()+'-'+Math.random().toString(16).slice(2)}
@@ -124,16 +122,7 @@ function initTypes(){el('faultType').innerHTML='<option value="">Izberi ...</opt
 function initMap(){
   if(!window.L){el('map').innerHTML='<div style="padding:30px">Zemljevida ni bilo mogoče naložiti. Preveri internetno povezavo.</div>';return}
   map=L.map('map',{zoomControl:true}).setView([45.803,15.168],16);
-  var osm=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
-  gurs=L.tileLayer.wms('https://ipi.eprostor.gov.si/wms-si-gurs-kgi/wms',{
-    layers:'SI.GURS.KGI:LINIJE_ELEKTRICNA_ENERGIJA_G',
-    format:'image/png',
-    transparent:true,
-    version:'1.1.1',
-    opacity:0.9,
-    attribution:'GURS ZKGJI'
-  }).addTo(map);
-  L.control.layers({'OpenStreetMap':osm},{'⚡ Elektro vodi GURS':gurs},{collapsed:true}).addTo(map);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
   map.on('click',function(e){openNew(e.latlng.lat,e.latlng.lng)});
   setTimeout(function(){map.invalidateSize()},200);
 }
@@ -180,8 +169,6 @@ el('newBtn').onclick=function(){var c=lastGps||(map?map.getCenter():{lat:45.803,
 el('closeBtn').onclick=closeModal;el('cancelBtn').onclick=closeModal;
 el('gpsBtn').onclick=function(){gps(null,true)}
 el('formGps').onclick=function(){gps(function(g){el('lat').value=g.lat.toFixed(6);el('lng').value=g.lng.toFixed(6)},false)}
-el('networkBtn').onclick=function(){if(!map||!gurs)return;if(gursOn){map.removeLayer(gurs);gursOn=false;toast('Elektro omrežje skrito')}else{gurs.addTo(map);gursOn=true;if(map.getZoom()<16)map.setZoom(16);toast('Elektro omrežje prikazano')}}
-el('pisoBtn').onclick=function(){window.open('https://www.geoprostor.net/piso/ewmap.asp?obcina=NOVO_MESTO','_blank','noopener')};
 el('photoInput').onchange=function(){addPhotos(this.files)}
 el('issueForm').onsubmit=function(e){e.preventDefault();var id=el('issueId').value||uid(),old=issues.find(function(x){return x.id===id});var lat=Number(String(el('lat').value).replace(',','.')),lng=Number(String(el('lng').value).replace(',','.'));if(!isFinite(lat)||!isFinite(lng)){toast('Preveri GPS');return}var x={id:id,createdAt:old?old.createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),reportedAt:el('reportedAt').value,lat:lat,lng:lng,area:el('area').value,object:el('object').value.trim(),ident:el('ident').value.trim(),type:el('faultType').value,priority:el('priority').value,status:el('status').value,maximo:el('maximo').value.trim(),reportedBy:el('reportedBy').value.trim(),assignedTo:el('assignedTo').value.trim(),description:el('description').value.trim(),notes:el('notes').value.trim(),photos:photos.slice()};if(old){issues=issues.map(function(i){return i.id===id?x:i})}else issues.unshift(x);try{save()}catch(err){toast('Premalo lokalnega prostora za slike');return}renderAll();closeModal();showView('mapView');if(map)map.setView([lat,lng],16);toast(old?'Napaka posodobljena':'Napaka shranjena lokalno')}
 el('deleteBtn').onclick=function(){var id=el('issueId').value;if(id&&confirm('Izbrišem napako?')){issues=issues.filter(function(x){return x.id!==id});save();renderAll();closeModal();toast('Napaka izbrisana')}}
