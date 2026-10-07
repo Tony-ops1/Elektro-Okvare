@@ -698,7 +698,7 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
 <body>
 <header>
   <div class="head">
-    <div><h1>⚡ Elektro okvare</h1><small>terensko beleženje • GitHub v1.9</small></div>
+    <div><h1>⚡ Elektro okvare</h1><small>terensko beleženje • GitHub v2.0</small></div>
     <div class="state" id="netState">● povezano</div>
   </div>
   <nav>
@@ -980,7 +980,7 @@ function initMap(){
 }
 
 var NET_BASE='https://ipi.eprostor.gov.si/wms-si-gurs-ins/ows';
-var netLayers=[],netSel=[],netSrs=[],netOverlay=null,netWms=null,netTimer=null,netErrShown=false;
+var netLayers=[{name:'US.ElectricityNetwork',title:'Elektroenergetsko omrežje'}],netSel=['US.ElectricityNetwork'],netSrs=[],netOverlay=null,netWms=null,netTimer=null,netErrShown=false;
 function netList(){
   var q=el('netFilter').value.trim().toLowerCase();
   var arr=netLayers.filter(function(l){return !q||(l.title+' '+l.name).toLowerCase().indexOf(q)>=0});
@@ -992,16 +992,30 @@ function netList(){
     refreshNet();
   }});
 }
-function netCaps(){
+function netCaps(autoEnable){
   var st=el('netStatus');st.textContent='Nalagam seznam slojev ...';
   fetch(NET_BASE+'?service=WMS&version=1.1.1&request=GetCapabilities').then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.text()}).then(function(t){
     var d=new DOMParser().parseFromString(t,'text/xml'),ls=d.getElementsByTagName('Layer'),out=[],i,c,n,ti;
     for(i=0;i<ls.length;i++){n=null;ti='';for(c=ls[i].firstElementChild;c;c=c.nextElementSibling){if(c.tagName==='Name')n=c.textContent.trim();if(c.tagName==='Title')ti=c.textContent.trim()}if(n)out.push({name:n,title:ti||n})}
     var sr=d.getElementsByTagName('SRS'),cr=d.getElementsByTagName('CRS');netSrs=[];
     [sr,cr].forEach(function(col){for(var k=0;k<col.length;k++)col[k].textContent.trim().split(/\s+/).forEach(function(x){if(x&&netSrs.indexOf(x)<0)netSrs.push(x)})});
-    netLayers=out;netList();
-    st.textContent=out.length?('Slojev: '+out.length+'. Obkljukaj, kaj želiš videti.'):'Seznam je prazen. Vpiši ime sloja ročno.';
-  }).catch(function(e){st.textContent='Seznama ni mogoče prebrati ('+(e&&e.message||'napaka')+'). Vpiši ime sloja ročno.'});
+    netLayers=out;
+    if(autoEnable){
+      var exact=out.find(function(l){return l.name==='US.ElectricityNetwork'});
+      var match=exact||out.find(function(l){return /electric|elektro/i.test((l.name||'')+' '+(l.title||''))});
+      if(match){netSel=[match.name]}
+      else if(!netSel.length){netSel=['US.ElectricityNetwork']}
+      refreshNet();
+    }
+    netList();
+    st.textContent=out.length?('Slojev: '+out.length+'. Elektro plast je privzeto vklopljena.'):'Seznam je prazen. Elektro plast je vseeno poskušana samodejno.';
+  }).catch(function(e){
+    st.textContent='Seznama ni mogoče prebrati ('+(e&&e.message||'napaka')+').';
+    if(autoEnable){
+      netSel=['US.ElectricityNetwork'];
+      refreshNet();
+    }
+  });
 }
 function netClear(){
   if(netWms){try{map.removeLayer(netWms)}catch(e){}netWms=null}
@@ -1154,7 +1168,7 @@ el('newBtn').onclick=function(){var c=lastGps||(map?map.getCenter():{lat:45.803,
 el('closeBtn').onclick=closeModal;el('cancelBtn').onclick=closeModal;
 el('gpsBtn').onclick=function(){gps(null,true)}
 el('orthoBtn').onclick=function(){orthoEnabled=!orthoEnabled;this.style.opacity=orthoEnabled?'1':'0.45';if(!orthoEnabled){if(orthoOverlay){try{map.removeLayer(orthoOverlay)}catch(e){}orthoOverlay=null;}toast('Ortofoto izklopljen')}else{toast('Ortofoto vklopljen');refreshOrtho()}}
-el('netBtn').onclick=function(){var p=el('netPanel'),show=p.style.display==='none';p.style.display=show?'flex':'none';if(show&&!netLayers.length)netCaps()};
+el('netBtn').onclick=function(){var p=el('netPanel'),show=p.style.display==='none';p.style.display=show?'flex':'none';if(show&&netLayers.length<=1)netCaps(false)};
 el('netClose').onclick=function(){el('netPanel').style.display='none'};
 el('netFilter').oninput=netList;
 el('netAdd').onclick=function(){var v=el('netManual').value.trim();if(!v)return;if(netSel.indexOf(v)<0)netSel.push(v);if(!netLayers.some(function(l){return l.name===v}))netLayers.unshift({name:v,title:v});netList();refreshNet();el('netManual').value=''};
@@ -1206,7 +1220,7 @@ el('issueForm').onsubmit=function(e){
 el('deleteBtn').onclick=function(){var id=el('issueId').value;if(id&&confirm('Izbrišem napako?')){issues=issues.filter(function(x){return x.id!==id});save();renderAll();closeModal();toast('Napaka izbrisana')}};
 ['search','areaFilter','typeFilter','priorityFilter'].forEach(function(id){el(id).addEventListener('input',renderLists);el(id).addEventListener('change',renderLists)});el('myName').oninput=renderMine;
 window.addEventListener('online',netState);window.addEventListener('offline',netState);
-load();initTypes();initMap();renderAll();netState();setTimeout(function(){gps(null,true)},500);
+load();initTypes();initMap();renderAll();netState();setTimeout(function(){netCaps(true)},350);setTimeout(function(){gps(null,true)},500);
 })();
 </script>
 </body>
