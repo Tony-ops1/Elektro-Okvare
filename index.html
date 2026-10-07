@@ -698,7 +698,7 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
 <body>
 <header>
   <div class="head">
-    <div><h1>⚡ Elektro okvare</h1><small>terensko beleženje • GitHub v2.0</small></div>
+    <div><h1>⚡ Elektro okvare</h1><small>terensko beleženje • GitHub v2.1</small></div>
     <div class="state" id="netState">● povezano</div>
   </div>
   <nav>
@@ -868,28 +868,29 @@ function toD96(lon,lat){
   for(var j=1;j<=3;j++){xs+=al[j-1]*Math.sin(2*j*xi)*Math.cosh(2*j*eta);es+=al[j-1]*Math.cos(2*j*xi)*Math.sinh(2*j*eta)}
   return [E0+k0*A*es,N0+k0*A*xs];
 }
-function orthoUrlForBounds(bounds){
+var ORTHO_BASE='https://ipi.eprostor.gov.si/wms-si-gurs-ins/ows';
+var orthoLayerName='SI.GURS.ZPDZ:DOF050';
+function orthoUrlForBounds(bounds,layerName){
   if(!map)return null;
   var sw=toD96(bounds.getWest(),bounds.getSouth());
   var ne=toD96(bounds.getEast(),bounds.getNorth());
   var size=map.getSize();
   var dpr=Math.min(window.devicePixelRatio||1,2);
-  var w=Math.max(256,Math.min(1024,Math.round(size.x*dpr)));
-  var h=Math.max(256,Math.min(1024,Math.round(size.y*dpr)));
-  return "https://ipi.eprostor.gov.si/gwc-si-gurs-dts/service/wms"+
-    "?SERVICE=WMS"+
-    "&VERSION=1.1.1"+
-    "&REQUEST=GetMap"+
-    "&FORMAT=image%2Fpng"+
-    "&TRANSPARENT=false"+
-    "&LAYERS=SI.GURS.ZPDZ%3ADOF050"+
-    "&REFERER_APP_CODE=JV"+
-    "&tiled=false"+
-    "&WIDTH="+w+
-    "&HEIGHT="+h+
-    "&SRS=EPSG%3A3794"+
-    "&BBOX="+[sw[0],sw[1],ne[0],ne[1]].join("%2C")+
-    "&_="+Date.now();
+  var w=Math.max(256,Math.min(1400,Math.round(size.x*dpr)));
+  var h=Math.max(256,Math.min(1400,Math.round(size.y*dpr)));
+  return ORTHO_BASE+
+    '?SERVICE=WMS'+
+    '&VERSION=1.1.1'+
+    '&REQUEST=GetMap'+
+    '&FORMAT=image%2Fjpeg'+
+    '&TRANSPARENT=false'+
+    '&STYLES='+
+    '&LAYERS='+encodeURIComponent(layerName||orthoLayerName)+
+    '&WIDTH='+w+
+    '&HEIGHT='+h+
+    '&SRS=EPSG%3A3794'+
+    '&BBOX='+[sw[0],sw[1],ne[0],ne[1]].join('%2C')+
+    '&_='+Date.now();
 }
 
 function refreshOrtho(){
@@ -898,28 +899,38 @@ function refreshOrtho(){
   orthoTimer=setTimeout(function(){
     try{
       var bounds=map.getBounds();
-      var url=orthoUrlForBounds(bounds);
-      if(!url)return;
-      var img=new Image();
-      img.onload=function(){
-        if(!orthoEnabled)return;
-        if(orthoOverlay){
-          try{map.removeLayer(orthoOverlay)}catch(e){}
-        }
-        orthoOverlay=L.imageOverlay(url,bounds,{
-          pane:"orthoPane",
-          interactive:false,
-          opacity:1
-        }).addTo(map);
-        orthoErrorShown=false;
-      };
-      img.onerror=function(){
-        if(!orthoErrorShown){
-          orthoErrorShown=true;
-          toast("GURS ortofoto trenutno ni dosegljiv – spodaj ostane zemljevid.");
-        }
-      };
-      img.src=url;
+
+      function loadLayer(layerName,isFallback){
+        var url=orthoUrlForBounds(bounds,layerName);
+        if(!url)return;
+
+        var img=new Image();
+        img.onload=function(){
+          if(!orthoEnabled)return;
+          if(orthoOverlay){
+            try{map.removeLayer(orthoOverlay)}catch(e){}
+          }
+          orthoLayerName=layerName;
+          orthoOverlay=L.imageOverlay(url,bounds,{
+            pane:'orthoPane',
+            interactive:false,
+            opacity:1
+          }).addTo(map);
+          orthoErrorShown=false;
+          if(isFallback)toast('Prikazan je pregledni GURS ortofoto.');
+        };
+        img.onerror=function(){
+          if(!isFallback){
+            loadLayer('SI.GURS.ZPDZ:PREGLEDNI_DOF',true);
+          }else if(!orthoErrorShown){
+            orthoErrorShown=true;
+            toast('GURS ortofoto se ne naloži – spodaj ostane zemljevid.');
+          }
+        };
+        img.src=url;
+      }
+
+      loadLayer('SI.GURS.ZPDZ:DOF050',false);
     }catch(err){
       console.error(err);
     }
