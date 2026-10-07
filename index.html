@@ -698,7 +698,7 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
 <body>
 <header>
   <div class="head">
-    <div><h1>⚡ Elektro okvare</h1><small>terensko beleženje • GitHub v1.8</small></div>
+    <div><h1>⚡ Elektro okvare</h1><small>terensko beleženje • GitHub v1.9</small></div>
     <div class="state" id="netState">● povezano</div>
   </div>
   <nav>
@@ -713,6 +713,11 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
 
 <main>
 <section id="mapView" class="view active">
+  <div style="display:grid;grid-template-columns:1fr auto;gap:7px;margin-bottom:8px">
+    <input id="mapSearchAddress" placeholder="Vpiši naslov ali kraj ..." style="min-height:46px;border:1px solid #c7d2db;border-radius:10px;padding:10px;background:#fff">
+    <button type="button" class="btn primary" id="mapAddressSearchBtn">🔎 Poišči naslov</button>
+  </div>
+  <div id="mapSearchStatus" style="font-size:12px;color:#687a88;margin:-2px 2px 7px"></div>
   <div class="mapwrap">
     <div id="map"></div>
     <div class="maptools">
@@ -757,7 +762,6 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
       <input type="hidden" id="lat">
       <input type="hidden" id="lng">
       <div class="field"><label>Datum in ura</label><input id="reportedAt" type="datetime-local" required></div>
-      <div class="field full"><label>Lokacija / naslov</label><div style="display:grid;grid-template-columns:1fr auto;gap:7px"><input id="locationAddress" placeholder="Vpiši naslov ali kraj ..."><button type="button" class="btn secondary" id="addressSearchBtn">🔎 Poišči</button></div><small id="addressStatus" style="color:#687a88"></small></div>
       <div class="field"><label>Vrsta okvare</label><select id="faultType"></select><input id="faultTypeCustom" placeholder="Vpiši drugo vrsto okvare ..."></div>
       <div class="field"><label>Napaka / opravilo</label><select id="faultDetail"></select><input id="faultDetailCustom" placeholder="Vpiši drugo napako / opravilo ..."></div>
       <div class="field"><label>Prioriteta</label><select id="priority"><option>kritično</option><option>visoka</option><option selected>normalna</option><option>nizka</option></select></div>
@@ -834,7 +838,7 @@ var KEY='elektro-okvare-data-v1';
 var issues=[];
 var photos=[];
 var markers={};
-var map=null,gpsMarker=null,lastGps=null,orthoOverlay=null,orthoEnabled=true,orthoTimer=null,orthoErrorShown=false;
+var map=null,gpsMarker=null,searchMarker=null,lastGps=null,orthoOverlay=null,orthoEnabled=true,orthoTimer=null,orthoErrorShown=false;
 function el(id){return document.getElementById(id)}
 function esc(s){return String(s||'').replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
 function uid(){return 'o-'+Date.now()+'-'+Math.random().toString(16).slice(2)}
@@ -1051,8 +1055,8 @@ function stats(){var o=issues.filter(function(x){return CLOSED.indexOf(x.status)
 function renderAll(){renderMarkers();renderLists();stats()}
 function showView(id){document.querySelectorAll('.view').forEach(function(v){v.classList.toggle('active',v.id===id)});document.querySelectorAll('nav button[data-view]').forEach(function(b){b.classList.toggle('active',b.dataset.view===id)});if(id==='mapView'&&map)setTimeout(function(){map.invalidateSize()},100)}
 function geocodeAddress(){
-  var input=el('locationAddress');
-  var status=el('addressStatus');
+  var input=el('mapSearchAddress');
+  var status=el('mapSearchStatus');
   var q=input.value.trim();
   if(!q){toast('Vpiši naslov ali kraj');return Promise.reject(new Error('Prazen naslov'))}
   status.textContent='Iščem lokacijo ...';
@@ -1065,15 +1069,17 @@ function geocodeAddress(){
     if(!arr||!arr.length)throw new Error('Lokacija ni najdena');
     var a=arr[0],lat=Number(a.lat),lng=Number(a.lon);
     if(!isFinite(lat)||!isFinite(lng))throw new Error('Neveljavna lokacija');
-    el('lat').value=lat.toFixed(6);
-    el('lng').value=lng.toFixed(6);
-    input.dataset.resolved=q;
     status.textContent='✓ '+(a.display_name||q);
-    if(map)map.setView([lat,lng],19);
-    toast('Lokacija najdena');
+    if(map){
+      map.setView([lat,lng],19);
+      if(searchMarker){try{map.removeLayer(searchMarker)}catch(e){}}
+      searchMarker=L.circleMarker([lat,lng],{
+        radius:10,color:'#0b3a63',weight:3,fillColor:'#fff',fillOpacity:1
+      }).addTo(map).bindPopup('Najden naslov<br><b>Tapni na karto na mestu okvare.</b>').openPopup();
+    }
+    toast('Naslov najden – označi mesto okvare na karti');
     return {lat:lat,lng:lng,address:a.display_name||q};
   }).catch(function(err){
-    input.dataset.resolved='';
     status.textContent='Lokacije ni mogoče najti.';
     toast('Lokacije ni mogoče najti');
     throw err;
@@ -1082,8 +1088,6 @@ function geocodeAddress(){
 
 function resetForm(){
   el('issueForm').reset();
-  el('locationAddress').dataset.resolved='';
-  el('addressStatus').textContent='';
   el('issueId').value='';
   el('reportedAt').value=nowInput();
   el('priority').value='normalna';
@@ -1097,9 +1101,6 @@ function openNew(lat,lng){
   el('formTitle').textContent='Nova napaka';
   el('lat').value=Number(lat).toFixed(6);
   el('lng').value=Number(lng).toFixed(6);
-  el('locationAddress').value='';
-  el('locationAddress').dataset.resolved='';
-  el('addressStatus').textContent='Lokacija je označena na zemljevidu; lahko pa vpišeš naslov.';
   el('modal').classList.add('open');
 }
 function openEdit(x){
@@ -1109,10 +1110,6 @@ function openEdit(x){
   el('reportedAt').value=x.reportedAt||nowInput();
   el('lat').value=x.lat;
   el('lng').value=x.lng;
-  el('locationAddress').value=x.locationAddress||'';
-  el('locationAddress').dataset.resolved=x.locationAddress||'';
-  el('addressStatus').textContent=x.locationAddress?'✓ '+x.locationAddress:'';
-
   if(TYPES.indexOf(x.type)>=0){
     el('faultType').value=x.type;
     el('faultTypeCustom').value='';
@@ -1162,20 +1159,15 @@ el('netClose').onclick=function(){el('netPanel').style.display='none'};
 el('netFilter').oninput=netList;
 el('netAdd').onclick=function(){var v=el('netManual').value.trim();if(!v)return;if(netSel.indexOf(v)<0)netSel.push(v);if(!netLayers.some(function(l){return l.name===v}))netLayers.unshift({name:v,title:v});netList();refreshNet();el('netManual').value=''};
 el('faultType').onchange=function(){updateFaultDetails()}
-el('addressSearchBtn').onclick=function(){geocodeAddress().catch(function(){})}
-el('locationAddress').oninput=function(){this.dataset.resolved='';el('addressStatus').textContent=''}
+el('mapAddressSearchBtn').onclick=function(){geocodeAddress().catch(function(){})}
+el('mapSearchAddress').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();geocodeAddress().catch(function(){})}})
 el('photoInput').onchange=function(){addPhotos(this.files)}
-el('issueForm').onsubmit=async function(e){
+el('issueForm').onsubmit=function(e){
   e.preventDefault();
   var id=el('issueId').value||uid(),old=issues.find(function(x){return x.id===id});
 
-  var address=el('locationAddress').value.trim();
-  if(address&&el('locationAddress').dataset.resolved!==address){
-    try{await geocodeAddress()}catch(err){return}
-  }
-
   var lat=Number(String(el('lat').value).replace(',','.')),lng=Number(String(el('lng').value).replace(',','.'));
-  if(!isFinite(lat)||!isFinite(lng)){toast('Vpiši naslov ali označi lokacijo na zemljevidu');return}
+  if(!isFinite(lat)||!isFinite(lng)){toast('Označi lokacijo okvare na zemljevidu');return}
 
   var typeCustom=el('faultTypeCustom').value.trim();
   var typeVal=typeCustom||el('faultType').value;
@@ -1190,7 +1182,7 @@ el('issueForm').onsubmit=async function(e){
     updatedAt:new Date().toISOString(),
     reportedAt:el('reportedAt').value,
     lat:lat,lng:lng,
-    locationAddress:address,
+    locationAddress:old?old.locationAddress||'':'',
     area:old?old.area||'':'',
     object:old?old.object||'':'',
     ident:old?old.ident||'':'',
