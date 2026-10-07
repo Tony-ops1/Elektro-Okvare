@@ -698,7 +698,7 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
 <body>
 <header>
   <div class="head">
-    <div><h1>⚡ Elektro okvare</h1><small>terensko beleženje • GitHub v2.1</small></div>
+    <div><h1>⚡ Elektro okvare</h1><small>terensko beleženje • GitHub v2.2</small></div>
     <div class="state" id="netState">● povezano</div>
   </div>
   <nav>
@@ -869,8 +869,10 @@ function toD96(lon,lat){
   return [E0+k0*A*es,N0+k0*A*xs];
 }
 var ORTHO_BASE='https://ipi.eprostor.gov.si/wms-si-gurs-ins/ows';
-var orthoLayerName='SI.GURS.ZPDZ:DOF050';
-function orthoUrlForBounds(bounds,layerName){
+var orthoLayerName='SI.GURS.ZPDZ:PREGLEDNI_DOF';
+var orthoFallbackTiles=null;
+
+function orthoUrlForBounds(bounds){
   if(!map)return null;
   var sw=toD96(bounds.getWest(),bounds.getSouth());
   var ne=toD96(bounds.getEast(),bounds.getNorth());
@@ -882,15 +884,39 @@ function orthoUrlForBounds(bounds,layerName){
     '?SERVICE=WMS'+
     '&VERSION=1.1.1'+
     '&REQUEST=GetMap'+
-    '&FORMAT=image%2Fjpeg'+
+    '&FORMAT=image%2Fpng'+
     '&TRANSPARENT=false'+
     '&STYLES='+
-    '&LAYERS='+encodeURIComponent(layerName||orthoLayerName)+
+    '&LAYERS='+encodeURIComponent(orthoLayerName)+
     '&WIDTH='+w+
     '&HEIGHT='+h+
     '&SRS=EPSG%3A3794'+
     '&BBOX='+[sw[0],sw[1],ne[0],ne[1]].join('%2C')+
+    '&REFERER_APP_CODE=JV'+
     '&_='+Date.now();
+}
+
+function enableOrthoFallback(){
+  if(!map||!orthoEnabled)return;
+  if(orthoOverlay){
+    try{map.removeLayer(orthoOverlay)}catch(e){}
+    orthoOverlay=null;
+  }
+  if(!orthoFallbackTiles){
+    orthoFallbackTiles=L.tileLayer(
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      {
+        maxNativeZoom:19,
+        maxZoom:22,
+        attribution:'Esri World Imagery'
+      }
+    );
+  }
+  if(!map.hasLayer(orthoFallbackTiles))orthoFallbackTiles.addTo(map);
+  if(!orthoErrorShown){
+    orthoErrorShown=true;
+    toast('GURS ortofoto ni dosegljiv – prikazana je satelitska podlaga.');
+  }
 }
 
 function refreshOrtho(){
@@ -899,40 +925,41 @@ function refreshOrtho(){
   orthoTimer=setTimeout(function(){
     try{
       var bounds=map.getBounds();
+      var url=orthoUrlForBounds(bounds);
+      if(!url)return;
 
-      function loadLayer(layerName,isFallback){
-        var url=orthoUrlForBounds(bounds,layerName);
-        if(!url)return;
+      var img=new Image();
+      var timedOut=false;
+      var timer=setTimeout(function(){
+        timedOut=true;
+        enableOrthoFallback();
+      },7000);
 
-        var img=new Image();
-        img.onload=function(){
-          if(!orthoEnabled)return;
-          if(orthoOverlay){
-            try{map.removeLayer(orthoOverlay)}catch(e){}
-          }
-          orthoLayerName=layerName;
-          orthoOverlay=L.imageOverlay(url,bounds,{
-            pane:'orthoPane',
-            interactive:false,
-            opacity:1
-          }).addTo(map);
-          orthoErrorShown=false;
-          if(isFallback)toast('Prikazan je pregledni GURS ortofoto.');
-        };
-        img.onerror=function(){
-          if(!isFallback){
-            loadLayer('SI.GURS.ZPDZ:PREGLEDNI_DOF',true);
-          }else if(!orthoErrorShown){
-            orthoErrorShown=true;
-            toast('GURS ortofoto se ne naloži – spodaj ostane zemljevid.');
-          }
-        };
-        img.src=url;
-      }
+      img.onload=function(){
+        clearTimeout(timer);
+        if(timedOut||!orthoEnabled)return;
+        if(orthoFallbackTiles&&map.hasLayer(orthoFallbackTiles)){
+          try{map.removeLayer(orthoFallbackTiles)}catch(e){}
+        }
+        if(orthoOverlay){
+          try{map.removeLayer(orthoOverlay)}catch(e){}
+        }
+        orthoOverlay=L.imageOverlay(url,bounds,{
+          pane:'orthoPane',
+          interactive:false,
+          opacity:1
+        }).addTo(map);
+        orthoErrorShown=false;
+      };
 
-      loadLayer('SI.GURS.ZPDZ:DOF050',false);
+      img.onerror=function(){
+        clearTimeout(timer);
+        enableOrthoFallback();
+      };
+      img.src=url;
     }catch(err){
       console.error(err);
+      enableOrthoFallback();
     }
   },220);
 }
@@ -1178,7 +1205,7 @@ document.querySelectorAll('nav button[data-view]').forEach(function(b){b.onclick
 el('newBtn').onclick=function(){var c=lastGps||(map?map.getCenter():{lat:45.803,lng:15.168});openNew(c.lat,c.lng)}
 el('closeBtn').onclick=closeModal;el('cancelBtn').onclick=closeModal;
 el('gpsBtn').onclick=function(){gps(null,true)}
-el('orthoBtn').onclick=function(){orthoEnabled=!orthoEnabled;this.style.opacity=orthoEnabled?'1':'0.45';if(!orthoEnabled){if(orthoOverlay){try{map.removeLayer(orthoOverlay)}catch(e){}orthoOverlay=null;}toast('Ortofoto izklopljen')}else{toast('Ortofoto vklopljen');refreshOrtho()}}
+el('orthoBtn').onclick=function(){orthoEnabled=!orthoEnabled;this.style.opacity=orthoEnabled?'1':'0.45';if(!orthoEnabled){if(orthoOverlay){try{map.removeLayer(orthoOverlay)}catch(e){}orthoOverlay=null;}if(orthoFallbackTiles&&map.hasLayer(orthoFallbackTiles)){try{map.removeLayer(orthoFallbackTiles)}catch(e){}}toast('Ortofoto izklopljen')}else{orthoErrorShown=false;toast('Ortofoto vklopljen');refreshOrtho()}}
 el('netBtn').onclick=function(){var p=el('netPanel'),show=p.style.display==='none';p.style.display=show?'flex':'none';if(show&&netLayers.length<=1)netCaps(false)};
 el('netClose').onclick=function(){el('netPanel').style.display='none'};
 el('netFilter').oninput=netList;
