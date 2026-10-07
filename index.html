@@ -698,7 +698,7 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
 <body>
 <header>
   <div class="head">
-    <div><h1>⚡ Elektro okvare</h1><small>terensko beleženje • GitHub v1.6</small></div>
+    <div><h1>⚡ Elektro okvare</h1><small>terensko beleženje • GitHub v1.7</small></div>
     <div class="state" id="netState">● povezano</div>
   </div>
   <nav>
@@ -734,7 +734,7 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
 <section id="openView" class="view">
   <div class="panel">
     <div class="toolbar">
-      <input id="search" placeholder="Išči: objekt, ident, DN, opis ...">
+      <input id="search" placeholder="Išči: vrsta, napaka, opis ...">
       <select id="areaFilter"><option value="">Vsa nadzorništva</option><option>Novo mesto</option><option>Metlika</option><option>Trebnje</option><option>Črnomelj</option><option>Šentjernej</option></select>
       <select id="typeFilter"><option value="">Vse vrste</option></select>
       <select id="priorityFilter"><option value="">Vse prioritete</option><option>kritično</option><option>visoka</option><option>normalna</option><option>nizka</option></select>
@@ -754,15 +754,13 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
   <form id="issueForm">
     <div class="form">
       <input type="hidden" id="issueId">
+      <input type="hidden" id="lat">
+      <input type="hidden" id="lng">
       <div class="field"><label>Datum in ura</label><input id="reportedAt" type="datetime-local" required></div>
-      <div class="field"><label>Nadzorništvo</label><select id="area" required><option value="">Izberi ...</option><option>Novo mesto</option><option>Metlika</option><option>Trebnje</option><option>Črnomelj</option><option>Šentjernej</option></select></div>
-      <div class="field full"><label>GPS</label><div class="coords"><input id="lat" inputmode="decimal" required><input id="lng" inputmode="decimal" required></div><button type="button" class="btn secondary" id="formGps">◎ Uporabi trenutno GPS lokacijo</button></div>
-      <div class="field"><label>Objekt / kraj</label><input id="object" placeholder="TP, drog, omarica, kraj ..."></div>
-      <div class="field"><label>Ident objekta</label><input id="ident"></div>
-      <div class="field"><label>Vrsta napake</label><select id="faultType" required></select></div>
+      <div class="field"><label>Vrsta okvare</label><select id="faultType"></select><input id="faultTypeCustom" placeholder="Vpiši drugo vrsto okvare ..."></div>
+      <div class="field"><label>Napaka / opravilo</label><select id="faultDetail"></select><input id="faultDetailCustom" placeholder="Vpiši drugo napako / opravilo ..."></div>
       <div class="field"><label>Prioriteta</label><select id="priority"><option>kritično</option><option>visoka</option><option selected>normalna</option><option>nizka</option></select></div>
       <div class="field"><label>Status</label><select id="status"><option selected>prijavljeno</option><option>potrjeno</option><option>v obravnavi</option><option>čaka material</option><option>čaka izklop</option><option>odpravljeno</option><option>zaključeno</option></select></div>
-      <div class="field"><label>Maximo DN</label><input id="maximo"></div>
       <div class="field"><label>Prijavil</label><input id="reportedBy"></div>
       <div class="field"><label>Monter / izvajalec</label><input id="assignedTo"></div>
       <div class="field full"><label>Opis napake</label><textarea id="description" required></textarea></div>
@@ -786,7 +784,49 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
 <script>
 (function(){
 'use strict';
-var TYPES=['izpad','poškodovan drog','zlomljen drog','pretrgan vodnik','povešen vodnik','drevo na vodu','poškodovana kabelska omarica','pregorela varovalka','okvara TP','kabelska napaka','javna razsvetljava','poškodba zaradi neurja','drugo'];
+var TYPES=[
+  'Zidana/montažna TP',
+  'Jamborska TP',
+  'Oporišče (Zidna konzola)',
+  'Oporišče (Strešno stojalo)',
+  'Ločilno mesto - (na mreži)',
+  'Števec',
+  'Ločilno mesto – varovalka',
+  'Kablovod (Podzemni vod)',
+  'Nadzemni vod',
+  'NN Omarica'
+];
+var FAULT_DETAILS={
+  'Zidana/montažna TP':[
+    'Popravilo strehe','Urejanje okolice','Napisne tablice','Popravilo enopolne sheme',
+    'Pretesnitev','Popravilo razsvetljave','Popravilo ozemljitve','Zamenjava varovalke',
+    'Popravilo kabelske glave','Popravilo SN celice'
+  ],
+  'Jamborska TP':[
+    'Urejanje okolice','Napisne tablice','Popravilo enopolne sheme','Pretesnitev',
+    'Popravilo razsvetljave','Popravilo ozemljitve','Zamenjava varovalke','Popravilo kabelske glave'
+  ],
+  'Oporišče (Zidna konzola)':['Zamenjava','Nagnjeno zvito','Korozija'],
+  'Oporišče (Strešno stojalo)':['Zamenjava','Nagnjeno zvito','Korozija'],
+  'Ločilno mesto - (na mreži)':['Zamenjava','Zamenjava izolatorja','Zamenjava tokovnih sponk','Popravilo pogona','Ključavnica','Ravnanje'],
+  'Števec':['Nedelujoč','Tipka neodzivna'],
+  'Ločilno mesto – varovalka':['Pregoretje','Zamenjava'],
+  'Kablovod (Podzemni vod)':['Kabel - Pretrgano/prekinjeno','Kabel – Poškodovano'],
+  'Nadzemni vod':['Popravilo','Posek'],
+  'NN Omarica':[
+    'Odvodnik prenapetosti – Manjkajoče',
+    'Odvodnik prenapetosti - Preboj',
+    'Oporišče (Leseni drog)',
+    'Leseni drog - Nagnjeno',
+    'Leseni drog Prevrnjen/zrušen',
+    'Leseni drog - Poškodovano',
+    'Leseni drog – Trhlo',
+    'Odvodnik prenapetosti – Manjkajoče',
+    'Odvodnik prenapetosti - Preboj',
+    'Oporišče (Jekleni drog)',
+    'Oporišče (Betonski drog)'
+  ]
+};
 var CLOSED=['odpravljeno','zaključeno'];
 var ORANGE=['v obravnavi','čaka material','čaka izklop'];
 var KEY='elektro-okvare-data-v1';
@@ -802,7 +842,16 @@ function nowInput(){var d=new Date(),z=function(n){return String(n).padStart(2,'
 function color(x){if(CLOSED.indexOf(x.status)>=0)return '#25824a';if(ORANGE.indexOf(x.status)>=0)return '#ef8b18';return '#c62828'}
 function save(){localStorage.setItem(KEY,JSON.stringify(issues))}
 function load(){try{issues=JSON.parse(localStorage.getItem(KEY)||'[]');if(!Array.isArray(issues))issues=[]}catch(e){issues=[]}}
-function initTypes(){el('faultType').innerHTML='<option value="">Izberi ...</option>'+TYPES.map(function(x){return '<option>'+esc(x)+'</option>'}).join('');el('typeFilter').innerHTML='<option value="">Vse vrste</option>'+TYPES.map(function(x){return '<option>'+esc(x)+'</option>'}).join('')}
+function initTypes(){
+  el('faultType').innerHTML='<option value="">Izberi ...</option>'+TYPES.map(function(x){return '<option>'+esc(x)+'</option>'}).join('');
+  el('typeFilter').innerHTML='<option value="">Vse vrste</option>'+TYPES.map(function(x){return '<option>'+esc(x)+'</option>'}).join('');
+  updateFaultDetails();
+}
+function updateFaultDetails(){
+  var t=el('faultType').value;
+  var arr=FAULT_DETAILS[t]||[];
+  el('faultDetail').innerHTML='<option value="">Izberi ...</option>'+arr.map(function(x){return '<option>'+esc(x)+'</option>'}).join('');
+}
 function toD96(lon,lat){
   var a=6378137,f=1/298.257222101,k0=0.9999,E0=500000,N0=-5000000,lon0=15*Math.PI/180;
   var n=f/(2-f),A=a/(1+n)*(1+n*n/4+n*n*n*n/64);
@@ -982,16 +1031,16 @@ function renderMarkers(){
   issues.forEach(function(x){
     var a=Number(x.lat),b=Number(x.lng);if(!isFinite(a)||!isFinite(b))return;
     var m=L.marker([a,b],{icon:iconFor(x)}).addTo(map);
-    m.bindPopup('<b>'+esc(x.type)+'</b><br>'+esc(x.object||x.ident||'')+'<br><small>'+esc(x.area)+' • '+esc(x.status)+'</small><br><button onclick="window.editIssue(\''+x.id+'\')" style="margin-top:7px;padding:7px 9px;border:0;border-radius:7px;background:#0b3a63;color:white">Odpri</button>');
+    m.bindPopup('<b>'+esc(x.type||'Napaka')+'</b>'+(x.faultDetail?'<br>'+esc(x.faultDetail):'')+'<br><small>'+esc(x.status)+'</small><br><button onclick="window.editIssue(\''+x.id+'\')" style="margin-top:7px;padding:7px 9px;border:0;border-radius:7px;background:#0b3a63;color:white">Odpri</button>');
     markers[x.id]=m;
   })
 }
 window.editIssue=function(id){var x=issues.find(function(i){return i.id===id});if(x)openEdit(x)}
-function card(x){var dt=x.reportedAt?new Date(x.reportedAt).toLocaleString('sl-SI'):'';return '<div class="card" data-id="'+x.id+'"><div class="bar" style="background:'+color(x)+'"></div><div class="body"><div class="title">'+esc(x.type)+(x.ident?' • '+esc(x.ident):'')+'</div><div class="meta"><span>📍 '+esc(x.object||'brez objekta')+'</span><span>🏢 '+esc(x.area)+'</span><span>🕒 '+esc(dt)+'</span><span>🔧 '+esc(x.status)+'</span>'+(x.maximo?'<span>DN '+esc(x.maximo)+'</span>':'')+'</div>'+(x.description?'<div class="desc">'+esc(x.description)+'</div>':'')+'</div><div class="side"><span class="pill '+esc(x.priority)+'">'+esc(x.priority)+'</span></div></div>'}
+function card(x){var dt=x.reportedAt?new Date(x.reportedAt).toLocaleString('sl-SI'):'';return '<div class="card" data-id="'+x.id+'"><div class="bar" style="background:'+color(x)+'"></div><div class="body"><div class="title">'+esc(x.type||'Napaka')+(x.faultDetail?' • '+esc(x.faultDetail):'')+'</div><div class="meta"><span>🕒 '+esc(dt)+'</span><span>🔧 '+esc(x.status)+'</span></div>'+(x.description?'<div class="desc">'+esc(x.description)+'</div>':'')+'</div><div class="side"><span class="pill '+esc(x.priority)+'">'+esc(x.priority)+'</span></div></div>'}
 function bindCards(box){box.querySelectorAll('.card').forEach(function(c){c.onclick=function(){window.editIssue(c.dataset.id)}})}
 function renderLists(){
   var q=el('search').value.trim().toLowerCase(),a=el('areaFilter').value,t=el('typeFilter').value,p=el('priorityFilter').value;
-  var open=issues.filter(function(x){return CLOSED.indexOf(x.status)<0}).filter(function(x){var h=[x.object,x.ident,x.maximo,x.description,x.reportedBy,x.assignedTo].join(' ').toLowerCase();return(!q||h.indexOf(q)>=0)&&(!a||x.area===a)&&(!t||x.type===t)&&(!p||x.priority===p)});
+  var open=issues.filter(function(x){return CLOSED.indexOf(x.status)<0}).filter(function(x){var h=[x.type,x.faultDetail,x.description,x.notes,x.reportedBy,x.assignedTo].join(' ').toLowerCase();return(!q||h.indexOf(q)>=0)&&(!a||x.area===a)&&(!t||x.type===t)&&(!p||x.priority===p)});
   el('openList').innerHTML=open.length?open.map(card).join(''):'<div class="empty">Ni odprtih napak.</div>';bindCards(el('openList'));
   var done=issues.filter(function(x){return CLOSED.indexOf(x.status)>=0});el('closedList').innerHTML=done.length?done.map(card).join(''):'<div class="empty">Ni zaključenih napak.</div>';bindCards(el('closedList'));
   renderMine()
@@ -1000,9 +1049,60 @@ function renderMine(){var n=el('myName').value.trim().toLowerCase(),arr=n?issues
 function stats(){var o=issues.filter(function(x){return CLOSED.indexOf(x.status)<0});el('sOpen').textContent=o.length;el('sCritical').textContent=o.filter(function(x){return x.priority==='kritično'}).length;el('sDone').textContent=issues.length-o.length;el('sAll').textContent=issues.length}
 function renderAll(){renderMarkers();renderLists();stats()}
 function showView(id){document.querySelectorAll('.view').forEach(function(v){v.classList.toggle('active',v.id===id)});document.querySelectorAll('nav button[data-view]').forEach(function(b){b.classList.toggle('active',b.dataset.view===id)});if(id==='mapView'&&map)setTimeout(function(){map.invalidateSize()},100)}
-function resetForm(){el('issueForm').reset();el('issueId').value='';el('reportedAt').value=nowInput();el('priority').value='normalna';el('status').value='prijavljeno';photos=[];renderPhotos();el('deleteBtn').style.display='none'}
-function openNew(lat,lng){resetForm();el('formTitle').textContent='Nova napaka';el('lat').value=Number(lat).toFixed(6);el('lng').value=Number(lng).toFixed(6);el('modal').classList.add('open')}
-function openEdit(x){resetForm();el('formTitle').textContent='Uredi napako';el('issueId').value=x.id;el('reportedAt').value=x.reportedAt||nowInput();el('lat').value=x.lat;el('lng').value=x.lng;el('area').value=x.area||'';el('object').value=x.object||'';el('ident').value=x.ident||'';el('faultType').value=x.type||'';el('priority').value=x.priority||'normalna';el('status').value=x.status||'prijavljeno';el('maximo').value=x.maximo||'';el('reportedBy').value=x.reportedBy||'';el('assignedTo').value=x.assignedTo||'';el('description').value=x.description||'';el('notes').value=x.notes||'';photos=Array.isArray(x.photos)?x.photos.slice():[];renderPhotos();el('deleteBtn').style.display='inline-block';el('modal').classList.add('open')}
+function resetForm(){
+  el('issueForm').reset();
+  el('issueId').value='';
+  el('reportedAt').value=nowInput();
+  el('priority').value='normalna';
+  el('status').value='prijavljeno';
+  updateFaultDetails();
+  photos=[];renderPhotos();
+  el('deleteBtn').style.display='none';
+}
+function openNew(lat,lng){
+  resetForm();
+  el('formTitle').textContent='Nova napaka';
+  el('lat').value=Number(lat).toFixed(6);
+  el('lng').value=Number(lng).toFixed(6);
+  el('modal').classList.add('open');
+}
+function openEdit(x){
+  resetForm();
+  el('formTitle').textContent='Uredi napako';
+  el('issueId').value=x.id;
+  el('reportedAt').value=x.reportedAt||nowInput();
+  el('lat').value=x.lat;
+  el('lng').value=x.lng;
+
+  if(TYPES.indexOf(x.type)>=0){
+    el('faultType').value=x.type;
+    el('faultTypeCustom').value='';
+  }else{
+    el('faultType').value='';
+    el('faultTypeCustom').value=x.type||'';
+  }
+  updateFaultDetails();
+
+  var arr=FAULT_DETAILS[x.type]||[];
+  if(x.faultDetail&&arr.indexOf(x.faultDetail)>=0){
+    el('faultDetail').value=x.faultDetail;
+    el('faultDetailCustom').value='';
+  }else{
+    el('faultDetail').value='';
+    el('faultDetailCustom').value=x.faultDetail||'';
+  }
+
+  el('priority').value=x.priority||'normalna';
+  el('status').value=x.status||'prijavljeno';
+  el('reportedBy').value=x.reportedBy||'';
+  el('assignedTo').value=x.assignedTo||'';
+  el('description').value=x.description||'';
+  el('notes').value=x.notes||'';
+  photos=Array.isArray(x.photos)?x.photos.slice():[];
+  renderPhotos();
+  el('deleteBtn').style.display='inline-block';
+  el('modal').classList.add('open');
+}
 function closeModal(){el('modal').classList.remove('open')}
 function renderPhotos(){el('photos').innerHTML=photos.map(function(s,i){return '<div class="photo"><img src="'+s+'"><button type="button" data-i="'+i+'">✕</button></div>'}).join('');el('photos').querySelectorAll('button').forEach(function(b){b.onclick=function(){photos.splice(Number(b.dataset.i),1);renderPhotos()}})}
 function compress(file){
@@ -1022,9 +1122,47 @@ el('netBtn').onclick=function(){var p=el('netPanel'),show=p.style.display==='non
 el('netClose').onclick=function(){el('netPanel').style.display='none'};
 el('netFilter').oninput=netList;
 el('netAdd').onclick=function(){var v=el('netManual').value.trim();if(!v)return;if(netSel.indexOf(v)<0)netSel.push(v);if(!netLayers.some(function(l){return l.name===v}))netLayers.unshift({name:v,title:v});netList();refreshNet();el('netManual').value=''};
-el('formGps').onclick=function(){gps(function(g){el('lat').value=g.lat.toFixed(6);el('lng').value=g.lng.toFixed(6)},false)}
+el('faultType').onchange=function(){updateFaultDetails()}
 el('photoInput').onchange=function(){addPhotos(this.files)}
-el('issueForm').onsubmit=function(e){e.preventDefault();var id=el('issueId').value||uid(),old=issues.find(function(x){return x.id===id});var lat=Number(String(el('lat').value).replace(',','.')),lng=Number(String(el('lng').value).replace(',','.'));if(!isFinite(lat)||!isFinite(lng)){toast('Preveri GPS');return}var x={id:id,createdAt:old?old.createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),reportedAt:el('reportedAt').value,lat:lat,lng:lng,area:el('area').value,object:el('object').value.trim(),ident:el('ident').value.trim(),type:el('faultType').value,priority:el('priority').value,status:el('status').value,maximo:el('maximo').value.trim(),reportedBy:el('reportedBy').value.trim(),assignedTo:el('assignedTo').value.trim(),description:el('description').value.trim(),notes:el('notes').value.trim(),photos:photos.slice()};if(old){issues=issues.map(function(i){return i.id===id?x:i})}else issues.unshift(x);try{save()}catch(err){toast('Premalo lokalnega prostora za slike');return}renderAll();closeModal();showView('mapView');if(map)map.setView([lat,lng],16);toast(old?'Napaka posodobljena':'Napaka shranjena lokalno')}
+el('issueForm').onsubmit=function(e){
+  e.preventDefault();
+  var id=el('issueId').value||uid(),old=issues.find(function(x){return x.id===id});
+  var lat=Number(String(el('lat').value).replace(',','.')),lng=Number(String(el('lng').value).replace(',','.'));
+  if(!isFinite(lat)||!isFinite(lng)){toast('Preveri lokacijo na zemljevidu');return}
+
+  var typeCustom=el('faultTypeCustom').value.trim();
+  var typeVal=typeCustom||el('faultType').value;
+  var detailCustom=el('faultDetailCustom').value.trim();
+  var detailVal=detailCustom||el('faultDetail').value;
+  if(!typeVal){toast('Izberi ali vpiši vrsto okvare');return}
+  if(!detailVal){toast('Izberi ali vpiši napako / opravilo');return}
+
+  var x={
+    id:id,
+    createdAt:old?old.createdAt:new Date().toISOString(),
+    updatedAt:new Date().toISOString(),
+    reportedAt:el('reportedAt').value,
+    lat:lat,lng:lng,
+    area:old?old.area||'':'',
+    object:old?old.object||'':'',
+    ident:old?old.ident||'':'',
+    maximo:old?old.maximo||'':'',
+    type:typeVal,
+    faultDetail:detailVal,
+    priority:el('priority').value,
+    status:el('status').value,
+    reportedBy:el('reportedBy').value.trim(),
+    assignedTo:el('assignedTo').value.trim(),
+    description:el('description').value.trim(),
+    notes:el('notes').value.trim(),
+    photos:photos.slice()
+  };
+  if(old){issues=issues.map(function(i){return i.id===id?x:i})}else issues.unshift(x);
+  try{save()}catch(err){toast('Premalo lokalnega prostora za slike');return}
+  renderAll();closeModal();showView('mapView');
+  if(map)map.setView([lat,lng],16);
+  toast(old?'Napaka posodobljena':'Napaka shranjena lokalno');
+}
 el('deleteBtn').onclick=function(){var id=el('issueId').value;if(id&&confirm('Izbrišem napako?')){issues=issues.filter(function(x){return x.id!==id});save();renderAll();closeModal();toast('Napaka izbrisana')}};
 ['search','areaFilter','typeFilter','priorityFilter'].forEach(function(id){el(id).addEventListener('input',renderLists);el(id).addEventListener('change',renderLists)});el('myName').oninput=renderMine;
 window.addEventListener('online',netState);window.addEventListener('offline',netState);
