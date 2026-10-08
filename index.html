@@ -1275,7 +1275,7 @@ function initMap(){
 
 var NET_BASE='https://ipi.eprostor.gov.si/wms-si-gurs/wms';
 var NET_DEFAULT=[{name:'SI.GURS.KGI:LINIJE_ELEKTRICNA_ENERGIJA_G',title:'Elektrika – vodi (GJI)'},{name:'SI.GURS.KGI:TOCKE_ELEKTRICNA_ENERGIJA_G',title:'Elektrika – točke, drogovi, objekti (GJI)'},{name:'SI.GURS.KGI:POLIGONI_ELEKTRICNA_ENERGIJA_G',title:'Elektrika – poligoni (GJI)'}];
-var netLayers=NET_DEFAULT.slice(),netSel=NET_DEFAULT.map(function(l){return l.name}),netSrs=[],netOverlay=null,netWms=null,netTimer=null,netErrShown=false;
+var netLayers=NET_DEFAULT.slice(),netSel=NET_DEFAULT.map(function(l){return l.name}),netSrs=[],netOverlay=null,netWms=null,netTimer=null,netErrShown=false,netReqSeq=0,netOverlayBounds=null,netOverlayZoom=null;
 function netList(){
   var q=el('netFilter').value.trim().toLowerCase();
   var arr=netLayers.filter(function(l){return !q||(l.title+' '+l.name).toLowerCase().indexOf(q)>=0});
@@ -1295,6 +1295,10 @@ function netCaps(autoEnable){
   if(autoEnable)refreshNet();
 }
 function netClear(){
+  netReqSeq++;
+  clearTimeout(netTimer);
+  netOverlayBounds=null;
+  netOverlayZoom=null;
   if(netWms){try{map.removeLayer(netWms)}catch(e){}netWms=null}
   if(netOverlay){try{map.removeLayer(netOverlay)}catch(e){}netOverlay=null}
 }
@@ -1303,22 +1307,61 @@ function refreshNet(){
   clearTimeout(netTimer);
   netTimer=setTimeout(function(){
     if(!netSel.length){netClear();return}
-    var has=function(x){return netSrs.indexOf(x)>=0};
-    if(true){
-      var b=map.getBounds(),sw=toD96(b.getWest(),b.getSouth()),ne=toD96(b.getEast(),b.getNorth()),sz=map.getSize(),dpr=Math.min(window.devicePixelRatio||1,2);
-      var w=Math.max(256,Math.min(1024,Math.round(sz.x*dpr))),h=Math.max(256,Math.min(1024,Math.round(sz.y*dpr)));
-      var url=NET_BASE+'?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&FORMAT=image%2Fpng&TRANSPARENT=true&STYLES=&LAYERS='+encodeURIComponent(netSel.join(','))+'&WIDTH='+w+'&HEIGHT='+h+'&SRS=EPSG%3A3794&BBOX='+[sw[0],sw[1],ne[0],ne[1]].join('%2C')+'&_='+Date.now();
-      var img=new Image();
-      img.onload=function(){if(!netSel.length)return;if(netOverlay){try{map.removeLayer(netOverlay)}catch(e){}}netOverlay=L.imageOverlay(url,b,{pane:'netPane',interactive:false}).addTo(map)};
-      img.onerror=function(){if(!netErrShown){netErrShown=true;toast('Sloja omrežja ni mogoče naložiti.')}};
-      img.src=url;
-    }else{
-      netClear();
-      netWms=L.tileLayer.wms(NET_BASE,{layers:netSel.join(','),format:'image/png',transparent:true,version:'1.1.1',pane:'netPane',maxZoom:22,attribution:'GURS'});
-      netWms.on('tileerror',function(){if(!netErrShown){netErrShown=true;toast('Sloja omrežja ni mogoče naložiti.')}});
-      netWms.addTo(map);
-    }
-  },250);
+
+    var viewBounds=map.getBounds(),zoom=map.getZoom();
+
+    // Če je trenutni pogled še znotraj že naložene večje slike in zoom ni spremenjen,
+    // GURS-a ne kličemo ponovno.
+    if(netOverlay&&netOverlayBounds&&netOverlayZoom===zoom&&netOverlayBounds.contains(viewBounds))return;
+
+    // Naložimo nekoliko večje območje od zaslona, zato manjši premiki ne sprožijo novega WMS klica.
+    var reqBounds=viewBounds.pad(0.20);
+    var sw=toD96(reqBounds.getWest(),reqBounds.getSouth());
+    var ne=toD96(reqBounds.getEast(),reqBounds.getNorth());
+    var sz=map.getSize();
+    var scale=Math.min(window.devicePixelRatio||1,1.35);
+    var padScale=1.40;
+    var w=Math.max(256,Math.min(900,Math.round(sz.x*scale*padScale)));
+    var hh=Math.max(256,Math.min(900,Math.round(sz.y*scale*padScale)));
+
+    var url=NET_BASE+
+      '?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap'+
+      '&FORMAT=image%2Fpng&TRANSPARENT=true&STYLES='+
+      '&LAYERS='+encodeURIComponent(netSel.join(','))+
+      '&WIDTH='+w+'&HEIGHT='+hh+
+      '&SRS=EPSG%3A3794'+
+      '&BBOX='+[sw[0],sw[1],ne[0],ne[1]].join('%2C');
+
+    var seq=++netReqSeq;
+    var oldOverlay=netOverlay;
+    var candidate=L.imageOverlay(url,reqBounds,{pane:'netPane',interactive:false,opacity:0});
+
+    candidate.on('load',function(){
+      if(seq!==netReqSeq){
+        try{map.removeLayer(candidate)}catch(e){}
+        return;
+      }
+      netErrShown=false;
+      candidate.setOpacity(1);
+      netOverlay=candidate;
+      netOverlayBounds=reqBounds;
+      netOverlayZoom=zoom;
+      if(oldOverlay&&oldOverlay!==candidate){
+        try{map.removeLayer(oldOverlay)}catch(e){}
+      }
+    });
+
+    candidate.on('error',function(){
+      try{map.removeLayer(candidate)}catch(e){}
+      if(!netErrShown){
+        netErrShown=true;
+        toast('Sloja omrežja ni mogoče naložiti.');
+      }
+    });
+
+    // Samo en HTTP zahtevek: Leaflet naloži sliko neposredno.
+    candidate.addTo(map);
+  },120);
 }
 function iconFor(x){var c=color(x);return L.divIcon({className:'',html:'<div style="width:24px;height:24px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:'+c+';border:3px solid white;box-shadow:0 2px 6px #0006"><span style="display:block;width:6px;height:6px;background:#fff;border-radius:50%;margin:6px"></span></div>',iconSize:[24,24],iconAnchor:[12,24]})}
 function renderMarkers(){
