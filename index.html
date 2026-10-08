@@ -698,7 +698,7 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
 <body>
 <header>
   <div class="head">
-    <div><h1>⚡ Elektro okvare</h1><small>terensko beleženje • GitHub v2.2</small></div>
+    <div><h1>⚡ Elektro okvare</h1><small>terensko beleženje • GitHub v2.3</small></div>
     <div class="state" id="netState">● povezano</div>
   </div>
   <nav>
@@ -790,46 +790,110 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
 (function(){
 'use strict';
 var TYPES=[
-  'Zidana/montažna TP',
+  'Zidana / montažna TP',
   'Jamborska TP',
-  'Oporišče (Zidna konzola)',
-  'Oporišče (Strešno stojalo)',
-  'Ločilno mesto - (na mreži)',
+  'Oporišče (zidna konzola)',
+  'Oporišče (strešno stojalo)',
+  'Oporišče (drog)',
+  'Ločilno mesto (na mreži)',
   'Števec',
-  'Ločilno mesto – varovalka',
-  'Kablovod (Podzemni vod)',
+  'Ločilno mesto (varovalka)',
+  'Kablovod (podzemni vod)',
   'Nadzemni vod',
-  'NN Omarica'
+  'NN omarica'
 ];
 var FAULT_DETAILS={
-  'Zidana/montažna TP':[
-    'Popravilo strehe','Urejanje okolice','Napisne tablice','Popravilo enopolne sheme',
-    'Pretesnitev','Popravilo razsvetljave','Popravilo ozemljitve','Zamenjava varovalke',
-    'Popravilo kabelske glave','Popravilo SN celice'
+  'Zidana / montažna TP':[
+    'Popravilo strehe',
+    'Urejanje okolice',
+    'Napisne tablice',
+    'Popravilo enopolne sheme',
+    'Pretesnitev',
+    'Popravilo razsvetljave',
+    'Popravilo ozemljitve',
+    'Zamenjava varovalke',
+    'Popravilo kabelske glave',
+    'Popravilo SN celice',
+    'Menjava ključavnice',
+    'Čiščenje notranjosti',
+    'Sanacija vlage',
+    'Popravilo vrat'
   ],
   'Jamborska TP':[
-    'Urejanje okolice','Napisne tablice','Popravilo enopolne sheme','Pretesnitev',
-    'Popravilo razsvetljave','Popravilo ozemljitve','Zamenjava varovalke','Popravilo kabelske glave'
+    'Urejanje okolice',
+    'Napisne tablice',
+    'Popravilo enopolne sheme',
+    'Pretesnitev',
+    'Popravilo razsvetljave',
+    'Popravilo ozemljitve',
+    'Zamenjava varovalke',
+    'Popravilo kabelske glave',
+    'Menjava ključavnice',
+    'Popravilo vrat'
   ],
-  'Oporišče (Zidna konzola)':['Zamenjava','Nagnjeno zvito','Korozija'],
-  'Oporišče (Strešno stojalo)':['Zamenjava','Nagnjeno zvito','Korozija'],
-  'Ločilno mesto - (na mreži)':['Zamenjava','Zamenjava izolatorja','Zamenjava tokovnih sponk','Popravilo pogona','Ključavnica','Ravnanje'],
-  'Števec':['Nedelujoč','Tipka neodzivna'],
-  'Ločilno mesto – varovalka':['Pregoretje','Zamenjava'],
-  'Kablovod (Podzemni vod)':['Kabel - Pretrgano/prekinjeno','Kabel – Poškodovano'],
-  'Nadzemni vod':['Popravilo','Posek'],
-  'NN Omarica':[
-    'Odvodnik prenapetosti – Manjkajoče',
-    'Odvodnik prenapetosti - Preboj',
-    'Oporišče (Leseni drog)',
-    'Leseni drog - Nagnjeno',
-    'Leseni drog Prevrnjen/zrušen',
-    'Leseni drog - Poškodovano',
-    'Leseni drog – Trhlo',
-    'Odvodnik prenapetosti – Manjkajoče',
-    'Odvodnik prenapetosti - Preboj',
-    'Oporišče (Jekleni drog)',
-    'Oporišče (Betonski drog)'
+  'Oporišče (zidna konzola)':[
+    'Zamenjava',
+    'Nagnjeno / zvito',
+    'Korozija',
+    'Poškodovano sidranje'
+  ],
+  'Oporišče (strešno stojalo)':[
+    'Zamenjava',
+    'Nagnjeno / zvito',
+    'Korozija',
+    'Poškodovano sidranje',
+    'Zamakanje strehe'
+  ],
+  'Oporišče (drog)':[
+    'Leseni drog – nagnjeno',
+    'Leseni drog – prevrnjen / zrušen',
+    'Leseni drog – poškodovano',
+    'Leseni drog – trhlo',
+    'Odvodnik prenapetosti – manjkajoče',
+    'Odvodnik prenapetosti – preboj',
+    'Poškodovan drogovnik ali klešče'
+  ],
+  'Ločilno mesto (na mreži)':[
+    'Zamenjava',
+    'Zamenjava izolatorja',
+    'Zamenjava tokovnih sponk',
+    'Popravilo pogona',
+    'Ključavnica',
+    'Ravnanje',
+    'Korozija',
+    'Čiščenje kontaktov'
+  ],
+  'Števec':[
+    'Nedelujoč',
+    'Tipka neodzivna',
+    'Poškodovan zaslon',
+    'Manjkajoča plomba'
+  ],
+  'Ločilno mesto (varovalka)':[
+    'Pregoretje',
+    'Zamenjava',
+    'Neustreza varovalka'
+  ],
+  'Kablovod (podzemni vod)':[
+    'Kabel – pretrgano / prekinjeno',
+    'Kabel – poškodovano',
+    'Poškodovana kabelska zaščita',
+    'Globina trase'
+  ],
+  'Nadzemni vod':[
+    'Popravilo',
+    'Posek',
+    'Poškodovan vodnik',
+    'Poškodovan izolator',
+    'Poves vodnikov'
+  ],
+  'NN omarica':[
+    'Odvodnik prenapetosti – manjkajoče',
+    'Odvodnik prenapetosti – preboj',
+    'Popravilo omarice',
+    'Vlaga v omarici',
+    'Menjava ključavnice',
+    'Poškodovana vrata'
   ]
 };
 var CLOSED=['odpravljeno','zaključeno'];
