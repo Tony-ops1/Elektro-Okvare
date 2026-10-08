@@ -1272,8 +1272,9 @@ function initMap(){
   },250);
 }
 
-var NET_BASE='https://ipi.eprostor.gov.si/wms-si-gurs-ins/ows';
-var netLayers=[{name:'US.ElectricityNetwork',title:'Elektroenergetsko omrežje'}],netSel=['US.ElectricityNetwork'],netSrs=[],netOverlay=null,netWms=null,netTimer=null,netErrShown=false;
+var NET_BASE='https://ipi.eprostor.gov.si/wms-si-gurs/wms';
+var NET_DEFAULT=[{name:'SI.GURS.KGI:LINIJE_ELEKTRICNA_ENERGIJA_G',title:'Elektrika – vodi (GJI)'},{name:'SI.GURS.KGI:TOCKE_ELEKTRICNA_ENERGIJA_G',title:'Elektrika – točke, drogovi, objekti (GJI)'},{name:'SI.GURS.KGI:POLIGONI_ELEKTRICNA_ENERGIJA_G',title:'Elektrika – poligoni (GJI)'}];
+var netLayers=NET_DEFAULT.slice(),netSel=NET_DEFAULT.map(function(l){return l.name}),netSrs=[],netOverlay=null,netWms=null,netTimer=null,netErrShown=false;
 function netList(){
   var q=el('netFilter').value.trim().toLowerCase();
   var arr=netLayers.filter(function(l){return !q||(l.title+' '+l.name).toLowerCase().indexOf(q)>=0});
@@ -1286,29 +1287,11 @@ function netList(){
   }});
 }
 function netCaps(autoEnable){
-  var st=el('netStatus');st.textContent='Nalagam seznam slojev ...';
-  fetch(NET_BASE+'?service=WMS&version=1.1.1&request=GetCapabilities').then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.text()}).then(function(t){
-    var d=new DOMParser().parseFromString(t,'text/xml'),ls=d.getElementsByTagName('Layer'),out=[],i,c,n,ti;
-    for(i=0;i<ls.length;i++){n=null;ti='';for(c=ls[i].firstElementChild;c;c=c.nextElementSibling){if(c.tagName==='Name')n=c.textContent.trim();if(c.tagName==='Title')ti=c.textContent.trim()}if(n)out.push({name:n,title:ti||n})}
-    var sr=d.getElementsByTagName('SRS'),cr=d.getElementsByTagName('CRS');netSrs=[];
-    [sr,cr].forEach(function(col){for(var k=0;k<col.length;k++)col[k].textContent.trim().split(/\s+/).forEach(function(x){if(x&&netSrs.indexOf(x)<0)netSrs.push(x)})});
-    netLayers=out;
-    if(autoEnable){
-      var exact=out.find(function(l){return l.name==='US.ElectricityNetwork'});
-      var match=exact||out.find(function(l){return /electric|elektro/i.test((l.name||'')+' '+(l.title||''))});
-      if(match){netSel=[match.name]}
-      else if(!netSel.length){netSel=['US.ElectricityNetwork']}
-      refreshNet();
-    }
-    netList();
-    st.textContent=out.length?('Slojev: '+out.length+'. Elektro plast je privzeto vklopljena.'):'Seznam je prazen. Elektro plast je vseeno poskušana samodejno.';
-  }).catch(function(e){
-    st.textContent='Seznama ni mogoče prebrati ('+(e&&e.message||'napaka')+').';
-    if(autoEnable){
-      netSel=['US.ElectricityNetwork'];
-      refreshNet();
-    }
-  });
+  netLayers=NET_DEFAULT.slice();
+  if(!netSel.length)netSel=NET_DEFAULT.map(function(l){return l.name});
+  netList();
+  el('netStatus').textContent='Gospodarska javna infrastruktura (GURS): elektrika. Sloj je viden pri večjem približku.';
+  if(autoEnable)refreshNet();
 }
 function netClear(){
   if(netWms){try{map.removeLayer(netWms)}catch(e){}netWms=null}
@@ -1320,7 +1303,7 @@ function refreshNet(){
   netTimer=setTimeout(function(){
     if(!netSel.length){netClear();return}
     var has=function(x){return netSrs.indexOf(x)>=0};
-    if(has('EPSG:3794')&&!has('EPSG:3857')&&!has('EPSG:900913')){
+    if(true){
       var b=map.getBounds(),sw=toD96(b.getWest(),b.getSouth()),ne=toD96(b.getEast(),b.getNorth()),sz=map.getSize(),dpr=Math.min(window.devicePixelRatio||1,2);
       var w=Math.max(256,Math.min(1024,Math.round(sz.x*dpr))),h=Math.max(256,Math.min(1024,Math.round(sz.y*dpr)));
       var url=NET_BASE+'?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&FORMAT=image%2Fpng&TRANSPARENT=true&STYLES=&LAYERS='+encodeURIComponent(netSel.join(','))+'&WIDTH='+w+'&HEIGHT='+h+'&SRS=EPSG%3A3794&BBOX='+[sw[0],sw[1],ne[0],ne[1]].join('%2C')+'&_='+Date.now();
@@ -1552,7 +1535,7 @@ async function enterApp(){
       netErrShown=false;
       netClear();
       netSrs=[];
-      netSel=['US.ElectricityNetwork'];
+      netSel=NET_DEFAULT.map(function(l){return l.name});
       netCaps(true);
       refreshOrtho();
     }catch(e){console.error(e)}
@@ -1646,7 +1629,7 @@ el('newBtn').onclick=function(){var c=lastGps||(map?map.getCenter():{lat:45.803,
 el('closeBtn').onclick=closeModal;el('cancelBtn').onclick=closeModal;
 el('gpsBtn').onclick=function(){gps(null,true)}
 el('orthoBtn').onclick=function(){orthoEnabled=!orthoEnabled;this.style.opacity=orthoEnabled?'1':'0.45';if(!orthoEnabled){if(orthoOverlay){try{map.removeLayer(orthoOverlay)}catch(e){}orthoOverlay=null;}if(orthoFallbackTiles&&map.hasLayer(orthoFallbackTiles)){try{map.removeLayer(orthoFallbackTiles)}catch(e){}}toast('Ortofoto izklopljen')}else{orthoErrorShown=false;toast('Ortofoto vklopljen');refreshOrtho()}}
-el('netBtn').onclick=function(){var p=el('netPanel'),show=p.style.display==='none';p.style.display=show?'flex':'none';if(show&&netLayers.length<=1)netCaps(false)};
+el('netBtn').onclick=function(){var p=el('netPanel'),show=p.style.display==='none';p.style.display=show?'flex':'none';if(show)netCaps(false)};
 el('netClose').onclick=function(){el('netPanel').style.display='none'};
 el('netFilter').oninput=netList;
 el('netAdd').onclick=function(){var v=el('netManual').value.trim();if(!v)return;if(netSel.indexOf(v)<0)netSel.push(v);if(!netLayers.some(function(l){return l.name===v}))netLayers.unshift({name:v,title:v});netList();refreshNet();el('netManual').value=''};
