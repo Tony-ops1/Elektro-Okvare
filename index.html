@@ -718,7 +718,7 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
 
 <header>
   <div class="head">
-    <div><h1>⚡ Elektro okvare</h1><small>terensko beleženje • GitHub v3.0</small></div>
+    <div><h1>⚡ Elektro okvare</h1><small>terensko beleženje • GitHub v3.1</small></div>
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end">
       <span id="currentUserLabel" style="font-size:12px;font-weight:800"></span>
       <button id="logoutBtn" type="button" style="display:none;border:0;border-radius:8px;padding:6px 9px;background:#fff;color:#0b3a63;font-weight:800">Odjava</button>
@@ -1009,6 +1009,98 @@ async function uploadNewPhotos(issueId){
     }catch(err){failed++;console.error(err)}
   }
   return failed;
+}
+
+async function importLegacyIssues(){
+  if(!sb||!currentProfile)return {imported:0,photos:0,failed:0};
+
+  var raw=localStorage.getItem(KEY);
+  if(!raw)return {imported:0,photos:0,failed:0};
+
+  var legacy;
+  try{legacy=JSON.parse(raw)}catch(e){return {imported:0,photos:0,failed:0}}
+  if(!Array.isArray(legacy)||!legacy.length)return {imported:0,photos:0,failed:0};
+
+  var er=await sb.from('issues').select('id,legacy_id').not('legacy_id','is',null);
+  if(er.error)throw er.error;
+  var existing={};
+  (er.data||[]).forEach(function(r){if(r.legacy_id)existing[r.legacy_id]=r.id});
+
+  var pr=await sb.from('issue_photos').select('storage_path');
+  if(pr.error)throw pr.error;
+  var existingPhotos={};
+  (pr.data||[]).forEach(function(r){existingPhotos[r.storage_path]=true});
+
+  var imported=0,photoCount=0,failed=0;
+
+  for(var i=0;i<legacy.length;i++){
+    var x=legacy[i]||{};
+    var legacyId=String(x.id||'').trim();
+    if(!legacyId)continue;
+
+    var issueId=existing[legacyId]||'';
+    if(!issueId){
+      var d=x.reportedAt?new Date(x.reportedAt):new Date();
+      if(!isFinite(d.getTime()))d=new Date();
+
+      var payload={
+        legacy_id:legacyId,
+        reported_at:d.toISOString(),
+        lat:Number(x.lat),
+        lng:Number(x.lng),
+        location_address:x.locationAddress||'',
+        type:x.type||'Stara napaka',
+        fault_detail:x.faultDetail||x.description||'Brez podrobnosti',
+        priority:x.priority||'normalna',
+        status:x.status||'prijavljeno',
+        reported_by_name:x.reportedBy||'',
+        assigned_to_name:x.assignedTo||'',
+        description:x.description||'',
+        notes:x.notes||'',
+        created_at:x.createdAt||undefined
+      };
+
+      if(!isFinite(payload.lat)||!isFinite(payload.lng)){failed++;continue}
+
+      var ins=await sb.from('issues').insert(payload).select('id').single();
+      if(ins.error){
+        var again=await sb.from('issues').select('id').eq('legacy_id',legacyId).maybeSingle();
+        if(again.error||!again.data){failed++;console.error(ins.error);continue}
+        issueId=again.data.id;
+      }else{
+        issueId=ins.data.id;
+        imported++;
+      }
+      existing[legacyId]=issueId;
+    }
+
+    var oldPhotos=Array.isArray(x.photos)?x.photos:[];
+    for(var j=0;j<oldPhotos.length;j++){
+      var src=typeof oldPhotos[j]==='string'?oldPhotos[j]:(oldPhotos[j]&&oldPhotos[j].url)||'';
+      if(!src||src.indexOf('data:image/')!==0)continue;
+
+      var path=issueId+'/legacy-'+j+'.jpg';
+      if(existingPhotos[path])continue;
+
+      try{
+        var blob=await fetch(src).then(function(r){return r.blob()});
+        var up=await sb.storage.from('issue-photos').upload(path,blob,{contentType:'image/jpeg',upsert:false});
+        if(up.error&&String(up.error.message||'').toLowerCase().indexOf('exist')<0)throw up.error;
+
+        var meta=await sb.from('issue_photos').upsert(
+          {issue_id:issueId,storage_path:path},
+          {onConflict:'storage_path',ignoreDuplicates:true}
+        );
+        if(meta.error)throw meta.error;
+
+        existingPhotos[path]=true;
+        photoCount++;
+      }catch(err){failed++;console.error(err)}
+    }
+  }
+
+  if(failed===0)localStorage.setItem('elektro-okvare-migrated-v3','1');
+  return {imported:imported,photos:photoCount,failed:failed};
 }
 function initTypes(){
   el('faultType').innerHTML='<option value="">Izberi ...</option>'+TYPES.map(function(x){return '<option>'+esc(x)+'</option>'}).join('');
@@ -1421,6 +1513,11 @@ function applyRoleUi(){
 async function enterApp(){
   if(!await loadCurrentProfile())return false;
   applyRoleUi();el('authGate').style.display='none';
+  try{
+    var mig=await importLegacyIssues();
+    if(mig.imported||mig.photos)toast('Uvoženo starih napak: '+mig.imported+(mig.photos?' • slik: '+mig.photos:''));
+    if(mig.failed)toast('Nekaj starih podatkov ni bilo mogoče uvoziti');
+  }catch(e){console.error(e);toast('Uvoz starih napak ni uspel')}
   await loadSharedIssues();subscribeRealtime();
   if(currentProfile.role==='admin')loadUsers().catch(function(e){console.error(e)});
   return true;
