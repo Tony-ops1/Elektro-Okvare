@@ -718,7 +718,7 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
 
 <header>
   <div class="head">
-    <div><h1>⚡ Elektro okvare</h1><small>terensko beleženje • GitHub v3.4</small></div>
+    <div><h1>⚡ Elektro okvare</h1><small>terensko beleženje • GitHub v3.5</small></div>
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end">
       <span id="currentUserLabel" style="font-size:12px;font-weight:800"></span>
       <button id="logoutBtn" type="button" style="display:none;border:0;border-radius:8px;padding:6px 9px;background:#fff;color:#0b3a63;font-weight:800">Odjava</button>
@@ -1465,7 +1465,7 @@ function openEdit(x){
   photos=Array.isArray(x.photos)?x.photos.map(function(p){return typeof p==='string'?{url:p,isNew:false}:Object.assign({},p)}):[];
   renderPhotos();
   var ab=el('deleteBtn');
-  if(currentProfile&&currentProfile.role==='admin'&&(x.archivedAt||x.status==='odpravljeno')){
+  if(currentProfile&&currentProfile.role==='admin'&&(x.archivedAt||CLOSED.indexOf(x.status)>=0)){
     ab.style.display='inline-block';
     ab.textContent=x.archivedAt?'Obnovi iz arhiva':'Arhiviraj';
   }else{ab.style.display='none'}
@@ -1664,8 +1664,8 @@ el('deleteBtn').onclick=async function(){
     if(rr.error){console.error(rr.error);toast('Obnova ni uspela');return}
     toast('Napaka obnovljena');
   }else{
-    if(x.status!=='odpravljeno'){toast('Najprej označi napako kot odpravljeno');return}
-    if(!confirm('Arhiviram odpravljeno napako?'))return;
+    if(CLOSED.indexOf(x.status)<0){toast('Najprej označi napako kot odpravljeno ali zaključeno');return}
+    if(!confirm('Arhiviram zaključeno napako?'))return;
     var ar=await sb.from('issues').update({archived_at:new Date().toISOString()}).eq('id',id);
     if(ar.error){console.error(ar.error);toast('Arhiviranje ni uspelo');return}
     toast('Napaka arhivirana');
