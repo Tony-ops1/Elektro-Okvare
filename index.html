@@ -718,7 +718,7 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
 
 <header>
   <div class="head">
-    <div><h1>⚡ Elektro okvare</h1><small>terensko beleženje • GitHub v3.5</small></div>
+    <div><h1>⚡ Elektro okvare</h1><small>terensko beleženje • GitHub v3.6</small></div>
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end">
       <span id="currentUserLabel" style="font-size:12px;font-weight:800"></span>
       <button id="logoutBtn" type="button" style="display:none;border:0;border-radius:8px;padding:6px 9px;background:#fff;color:#0b3a63;font-weight:800">Odjava</button>
@@ -1354,16 +1354,48 @@ function renderMarkers(){
   })
 }
 window.editIssue=function(id){var x=issues.find(function(i){return i.id===id});if(x)openEdit(x)}
-function card(x){var dt=x.reportedAt?new Date(x.reportedAt).toLocaleString('sl-SI'):'';return '<div class="card" data-id="'+x.id+'"><div class="bar" style="background:'+color(x)+'"></div><div class="body"><div class="title">'+esc(x.type||'Napaka')+(x.faultDetail?' • '+esc(x.faultDetail):'')+'</div><div class="meta">'+(x.locationAddress?'<span>📍 '+esc(x.locationAddress)+'</span>':'')+'<span>🕒 '+esc(dt)+'</span><span>🔧 '+esc(x.status)+'</span></div>'+(x.description?'<div class="desc">'+esc(x.description)+'</div>':'')+'</div><div class="side"><span class="pill '+esc(x.priority)+'">'+esc(x.priority)+'</span></div></div>'}
-function bindCards(box){box.querySelectorAll('.card').forEach(function(c){c.onclick=function(){window.editIssue(c.dataset.id)}})}
+function card(x,adminAction){
+  var dt=x.reportedAt?new Date(x.reportedAt).toLocaleString('sl-SI'):'';
+  var action='';
+  if(currentProfile&&currentProfile.role==='admin'&&adminAction==='archive'){
+    action='<button type="button" class="btn danger quickArchive" data-action-id="'+esc(x.id)+'" style="margin-top:8px;padding:8px 10px;white-space:nowrap">📦 ARHIVIRAJ</button>';
+  }else if(currentProfile&&currentProfile.role==='admin'&&adminAction==='restore'){
+    action='<button type="button" class="btn secondary quickRestore" data-action-id="'+esc(x.id)+'" style="margin-top:8px;padding:8px 10px;white-space:nowrap">↩ OBNOVI</button>';
+  }
+  return '<div class="card" data-id="'+x.id+'"><div class="bar" style="background:'+color(x)+'"></div><div class="body"><div class="title">'+esc(x.type||'Napaka')+(x.faultDetail?' • '+esc(x.faultDetail):'')+'</div><div class="meta">'+(x.locationAddress?'<span>📍 '+esc(x.locationAddress)+'</span>':'')+'<span>🕒 '+esc(dt)+'</span><span>🔧 '+esc(x.status)+'</span></div>'+(x.description?'<div class="desc">'+esc(x.description)+'</div>':'')+'</div><div class="side"><span class="pill '+esc(x.priority)+'">'+esc(x.priority)+'</span>'+action+'</div></div>'
+}
+function bindCards(box){
+  box.querySelectorAll('.card').forEach(function(c){c.onclick=function(){window.editIssue(c.dataset.id)}});
+  box.querySelectorAll('.quickArchive').forEach(function(b){b.onclick=async function(e){
+    e.stopPropagation();
+    if(!currentProfile||currentProfile.role!=='admin'){toast('Samo admin lahko arhivira');return}
+    var id=b.dataset.actionId,x=issues.find(function(i){return i.id===id});
+    if(!x||CLOSED.indexOf(x.status)<0){toast('Okvara ni zaključena');return}
+    if(!confirm('Arhiviram zaključeno okvaro?'))return;
+    b.disabled=true;
+    var r=await sb.from('issues').update({archived_at:new Date().toISOString()}).eq('id',id);
+    if(r.error){console.error(r.error);b.disabled=false;toast('Arhiviranje ni uspelo');return}
+    await loadSharedIssues();toast('Okvara arhivirana');
+  }});
+  box.querySelectorAll('.quickRestore').forEach(function(b){b.onclick=async function(e){
+    e.stopPropagation();
+    if(!currentProfile||currentProfile.role!=='admin'){return}
+    if(!confirm('Obnovim okvaro iz arhiva?'))return;
+    b.disabled=true;
+    var r=await sb.from('issues').update({archived_at:null}).eq('id',b.dataset.actionId);
+    if(r.error){console.error(r.error);b.disabled=false;toast('Obnova ni uspela');return}
+    await loadSharedIssues();toast('Okvara obnovljena');
+  }});
+}
 function renderLists(){
   var q=el('search').value.trim().toLowerCase(),a=el('areaFilter').value,t=el('typeFilter').value,p=el('priorityFilter').value;
   var active=issues.filter(function(x){return !x.archivedAt});
   var open=active.filter(function(x){return CLOSED.indexOf(x.status)<0}).filter(function(x){var hh=[x.type,x.faultDetail,x.locationAddress,x.description,x.notes,x.reportedBy,x.assignedTo].join(' ').toLowerCase();return(!q||hh.indexOf(q)>=0)&&(!a||x.area===a)&&(!t||x.type===t)&&(!p||x.priority===p)});
-  el('openList').innerHTML=open.length?open.map(card).join(''):'<div class="empty">Ni odprtih napak.</div>';bindCards(el('openList'));
-  var done=active.filter(function(x){return CLOSED.indexOf(x.status)>=0});el('closedList').innerHTML=done.length?done.map(card).join(''):'<div class="empty">Ni zaključenih napak.</div>';bindCards(el('closedList'));
+  el('openList').innerHTML=open.length?open.map(function(x){return card(x,'')}).join(''):'<div class="empty">Ni odprtih napak.</div>';bindCards(el('openList'));
+  var done=active.filter(function(x){return CLOSED.indexOf(x.status)>=0});
+  el('closedList').innerHTML=done.length?done.map(function(x){return card(x,'archive')}).join(''):'<div class="empty">Ni zaključenih napak.</div>';bindCards(el('closedList'));
   var archived=issues.filter(function(x){return !!x.archivedAt});
-  el('archiveList').innerHTML=archived.length?archived.map(card).join(''):'<div class="empty">Arhiv je prazen.</div>';bindCards(el('archiveList'));
+  el('archiveList').innerHTML=archived.length?archived.map(function(x){return card(x,'restore')}).join(''):'<div class="empty">Arhiv je prazen.</div>';bindCards(el('archiveList'));
   renderMine()
 }
 function renderMine(){
