@@ -718,7 +718,7 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
 
 <header>
   <div class="head">
-    <div><h1>⚡ Elektro okvare</h1><small>terensko beleženje • GitHub v3.3</small></div>
+    <div><h1>⚡ Elektro okvare</h1><small>terensko beleženje • GitHub v3.4</small></div>
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end">
       <span id="currentUserLabel" style="font-size:12px;font-weight:800"></span>
       <button id="logoutBtn" type="button" style="display:none;border:0;border-radius:8px;padding:6px 9px;background:#fff;color:#0b3a63;font-weight:800">Odjava</button>
@@ -1286,33 +1286,23 @@ function netList(){
   }});
 }
 function netCaps(autoEnable){
-  var st=el('netStatus');st.textContent='Nalagam seznam slojev ...';
-  fetch(NET_BASE+'?service=WMS&version=1.1.1&request=GetCapabilities').then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.text()}).then(function(t){
-    var d=new DOMParser().parseFromString(t,'text/xml'),ls=d.getElementsByTagName('Layer'),out=[],i,c,n,ti;
-    for(i=0;i<ls.length;i++){n=null;ti='';for(c=ls[i].firstElementChild;c;c=c.nextElementSibling){if(c.tagName==='Name')n=c.textContent.trim();if(c.tagName==='Title')ti=c.textContent.trim()}if(n)out.push({name:n,title:ti||n})}
-    var sr=d.getElementsByTagName('SRS'),cr=d.getElementsByTagName('CRS');netSrs=[];
-    [sr,cr].forEach(function(col){for(var k=0;k<col.length;k++)col[k].textContent.trim().split(/\s+/).forEach(function(x){if(x&&netSrs.indexOf(x)<0)netSrs.push(x)})});
-    netLayers=out;
-    if(autoEnable){
-      var exact=out.find(function(l){return l.name==='US.ElectricityNetwork'});
-      var match=exact||out.find(function(l){return /electric|elektro/i.test((l.name||'')+' '+(l.title||''))});
-      if(match){netSel=[match.name]}
-      else if(!netSel.length){netSel=['US.ElectricityNetwork']}
-      refreshNet();
-    }
-    netList();
-    st.textContent=out.length?('Slojev: '+out.length+'. Elektro plast je privzeto vklopljena.'):'Seznam je prazen. Elektro plast je vseeno poskušana samodejno.';
-  }).catch(function(e){
-    st.textContent='Seznama ni mogoče prebrati; uporabljam neposredni elektro sloj.';
-    if(autoEnable){
-      netSel=['US.ElectricityNetwork'];
-      refreshNet();
-    }
-  });
+  netLayers=[{name:'US.ElectricityNetwork',title:'Elektroenergetsko omrežje'}];
+  netSel=['US.ElectricityNetwork'];
+  netSrs=['EPSG:3857'];
+  netList();
+  if(el('netStatus'))el('netStatus').textContent='Elektro omrežje • GURS prek varne povezave';
+  if(autoEnable)refreshNet();
 }
 function netClear(){
   if(netWms){try{map.removeLayer(netWms)}catch(e){}netWms=null}
   if(netOverlay){try{map.removeLayer(netOverlay)}catch(e){}netOverlay=null}
+}
+function webMercator(lon,lat){
+  var R=6378137;
+  var x=R*lon*Math.PI/180;
+  var clamped=Math.max(-85.05112878,Math.min(85.05112878,lat));
+  var y=R*Math.log(Math.tan(Math.PI/4+clamped*Math.PI/360));
+  return [x,y];
 }
 function refreshNet(){
   if(!map)return;
@@ -1321,26 +1311,18 @@ function refreshNet(){
     if(!netSel.length){netClear();return}
 
     var b=map.getBounds();
-    var sw=toD96(b.getWest(),b.getSouth());
-    var ne=toD96(b.getEast(),b.getNorth());
+    var sw=webMercator(b.getWest(),b.getSouth());
+    var ne=webMercator(b.getEast(),b.getNorth());
     var sz=map.getSize();
     var dpr=Math.min(window.devicePixelRatio||1,2);
     var w=Math.max(256,Math.min(1400,Math.round(sz.x*dpr)));
     var hh=Math.max(256,Math.min(1400,Math.round(sz.y*dpr)));
 
-    var url=NET_BASE+
-      '?SERVICE=WMS'+
-      '&VERSION=1.1.1'+
-      '&REQUEST=GetMap'+
-      '&FORMAT=image%2Fpng'+
-      '&TRANSPARENT=true'+
-      '&STYLES='+
-      '&LAYERS='+encodeURIComponent(netSel.join(','))+
-      '&WIDTH='+w+
-      '&HEIGHT='+hh+
-      '&SRS=EPSG%3A3794'+
-      '&BBOX='+[sw[0],sw[1],ne[0],ne[1]].join('%2C')+
-      '&REFERER_APP_CODE=JV'+
+    var proxy=SUPABASE_URL+'/functions/v1/gurs-network-proxy'+
+      '?bbox='+encodeURIComponent([sw[0],sw[1],ne[0],ne[1]].join(','))+
+      '&srs=EPSG%3A3857'+
+      '&width='+w+
+      '&height='+hh+
       '&_='+Date.now();
 
     var img=new Image();
@@ -1349,14 +1331,14 @@ function refreshNet(){
       netErrShown=false;
       if(netWms){try{map.removeLayer(netWms)}catch(e){}netWms=null}
       if(netOverlay){try{map.removeLayer(netOverlay)}catch(e){}}
-      netOverlay=L.imageOverlay(url,b,{pane:'netPane',interactive:false,opacity:1}).addTo(map);
-      if(el('netStatus'))el('netStatus').textContent='Elektro omrežje prikazano • EPSG:3794';
+      netOverlay=L.imageOverlay(proxy,b,{pane:'netPane',interactive:false,opacity:1}).addTo(map);
+      if(el('netStatus'))el('netStatus').textContent='✓ Elektro omrežje prikazano';
     };
     img.onerror=function(){
-      if(el('netStatus'))el('netStatus').textContent='Elektro sloja ni mogoče naložiti iz GURS.';
-      if(!netErrShown){netErrShown=true;toast('Elektro sloja ni mogoče naložiti iz GURS.')}
+      if(el('netStatus'))el('netStatus').textContent='Elektro sloja trenutno ni mogoče naložiti.';
+      if(!netErrShown){netErrShown=true;toast('Elektro sloja trenutno ni mogoče naložiti.')}
     };
-    img.src=url;
+    img.src=proxy;
   },180);
 }
 function iconFor(x){var c=color(x);return L.divIcon({className:'',html:'<div style="width:24px;height:24px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:'+c+';border:3px solid white;box-shadow:0 2px 6px #0006"><span style="display:block;width:6px;height:6px;background:#fff;border-radius:50%;margin:6px"></span></div>',iconSize:[24,24],iconAnchor:[12,24]})}
@@ -1542,7 +1524,7 @@ async function enterApp(){
       if(map)map.invalidateSize(true);
       netErrShown=false;
       netClear();
-      netSrs=[];
+      netSrs=['EPSG:3857'];
       netSel=['US.ElectricityNetwork'];
       netCaps(true);
       refreshOrtho();
