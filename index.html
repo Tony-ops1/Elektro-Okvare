@@ -1261,6 +1261,7 @@ function initMap(){
   map.createPane("netPane");
   map.getPane("netPane").style.zIndex=260;
   map.getPane("netPane").style.pointerEvents="none";
+  map.getPane("netPane").style.filter="hue-rotate(240deg) saturate(1.55)";
 
   map.on('click',function(e){openNew(e.latlng.lat,e.latlng.lng)});
   map.on('moveend zoomend resize',refreshOrtho);
