@@ -1261,7 +1261,7 @@ function initMap(){
   map.createPane("netPane");
   map.getPane("netPane").style.zIndex=260;
   map.getPane("netPane").style.pointerEvents="none";
-  map.getPane("netPane").style.filter="hue-rotate(240deg) saturate(1.55)";
+  map.getPane("netPane").style.filter="none";
 
   map.on('click',function(e){openNew(e.latlng.lat,e.latlng.lng)});
   map.on('moveend zoomend resize',refreshOrtho);
@@ -1274,8 +1274,9 @@ function initMap(){
 }
 
 var NET_BASE='https://ipi.eprostor.gov.si/wms-si-gurs-kgi/wms';
+var NET_WFS='https://ipi.eprostor.gov.si/wfs-si-gurs-kgi/wfs';
 var NET_DEFAULT=[{name:'SI.GURS.KGI:LINIJE_ELEKTRICNA_ENERGIJA_G',title:'Elektrika – vodi (GJI)'},{name:'SI.GURS.KGI:TOCKE_ELEKTRICNA_ENERGIJA_G',title:'Elektrika – točke, drogovi, objekti (GJI)'},{name:'SI.GURS.KGI:POLIGONI_ELEKTRICNA_ENERGIJA_G',title:'Elektrika – poligoni (GJI)'}];
-var netLayers=NET_DEFAULT.slice(),netSel=NET_DEFAULT.map(function(l){return l.name}),netSrs=[],netOverlay=null,netWms=null,netTimer=null,netErrShown=false,netReqSeq=0,netOverlayBounds=null,netOverlayZoom=null;
+var netLayers=NET_DEFAULT.slice(),netSel=[NET_DEFAULT[0].name],netSrs=[],netOverlay=null,netWms=null,netTimer=null,netErrShown=false,netReqSeq=0,netOverlayBounds=null,netOverlayZoom=null,netPendingBounds=null,netAbort=null;
 function netList(){
   var q=el('netFilter').value.trim().toLowerCase();
   var arr=netLayers.filter(function(l){return !q||(l.title+' '+l.name).toLowerCase().indexOf(q)>=0});
@@ -1289,18 +1290,57 @@ function netList(){
 }
 function netCaps(autoEnable){
   netLayers=NET_DEFAULT.slice();
-  if(!netSel.length)netSel=NET_DEFAULT.map(function(l){return l.name});
+  if(!netSel.length)netSel=[NET_DEFAULT[0].name];
   netList();
-  el('netStatus').textContent='Gospodarska javna infrastruktura (GURS): elektrika. Sloj je viden pri večjem približku.';
+  el('netStatus').textContent='Električni vodi • hitri vektorski prikaz GURS KGI';
   if(autoEnable)refreshNet();
 }
 function netClear(){
   netReqSeq++;
   clearTimeout(netTimer);
+  if(netAbort){try{netAbort.abort()}catch(e){}netAbort=null}
+  netPendingBounds=null;
   netOverlayBounds=null;
   netOverlayZoom=null;
   if(netWms){try{map.removeLayer(netWms)}catch(e){}netWms=null}
   if(netOverlay){try{map.removeLayer(netOverlay)}catch(e){}netOverlay=null}
+}
+function netWmsFallback(){
+  if(!map||!netSel.length)return;
+  var layerNames=netSel.join(',');
+  if(netWms&&netWms.__layers===layerNames)return;
+
+  if(netOverlay){try{map.removeLayer(netOverlay)}catch(e){}netOverlay=null}
+  if(netWms){try{map.removeLayer(netWms)}catch(e){}netWms=null}
+
+  map.getPane('netPane').style.filter='hue-rotate(240deg) saturate(1.55)';
+  netWms=L.tileLayer.wms(NET_BASE,{
+    layers:layerNames,
+    format:'image/png',
+    transparent:true,
+    version:'1.1.1',
+    pane:'netPane',
+    tileSize:512,
+    updateWhenIdle:true,
+    updateWhenZooming:false,
+    keepBuffer:1,
+    detectRetina:false,
+    tiled:true,
+    maxZoom:22,
+    attribution:'GURS KGI'
+  });
+  netWms.__layers=layerNames;
+  netWms.on('tileload',function(){
+    netErrShown=false;
+    if(el('netStatus'))el('netStatus').textContent='Elektro omrežje • rezervni WMS prikaz';
+  });
+  netWms.on('tileerror',function(){
+    if(!netErrShown){
+      netErrShown=true;
+      toast('Sloja omrežja ni mogoče naložiti.');
+    }
+  });
+  netWms.addTo(map);
 }
 function refreshNet(){
   if(!map)return;
@@ -1308,44 +1348,84 @@ function refreshNet(){
   netTimer=setTimeout(function(){
     if(!netSel.length){netClear();return}
 
-    var layerNames=netSel.join(',');
+    var lineName=NET_DEFAULT[0].name;
+    var onlyLines=netSel.length===1&&netSel[0]===lineName;
 
-    // Če je WMS plast že aktivna z istimi sloji, je ne ustvarjamo ponovno.
-    if(netWms&&netWms.__layers===layerNames)return;
+    // Točke/poligoni so opcijski; zanje ostane WMS.
+    if(!onlyLines){netWmsFallback();return}
 
-    netClear();
+    // GURS KGI je namenjen podrobnejšemu prikazu; pri premajhnem zoomu ne obremenjujemo strežnika.
+    if(map.getZoom()<15){
+      if(netWms){try{map.removeLayer(netWms)}catch(e){}netWms=null}
+      if(netOverlay){try{map.removeLayer(netOverlay)}catch(e){}netOverlay=null}
+      netOverlayBounds=null;
+      if(el('netStatus'))el('netStatus').textContent='Za elektro omrežje približaj zemljevid.';
+      return;
+    }
 
-    // Namenski KGI WMS nalagamo po majhnih ploščicah.
-    // Tako se najprej pokaže bližnje omrežje, ostalo pa se dopolni sproti.
-    netWms=L.tileLayer.wms(NET_BASE,{
-      layers:layerNames,
-      format:'image/png',
-      transparent:true,
-      version:'1.1.1',
-      pane:'netPane',
-      tileSize:256,
-      updateWhenIdle:true,
-      updateWhenZooming:false,
-      keepBuffer:4,
-      detectRetina:false,
-      maxZoom:22,
-      attribution:'GURS KGI'
-    });
-    netWms.__layers=layerNames;
+    var viewBounds=map.getBounds();
 
-    netWms.on('tileload',function(){
-      netErrShown=false;
-      if(el('netStatus'))el('netStatus').textContent='Elektro omrežje • GURS KGI';
-    });
-    netWms.on('tileerror',function(){
-      if(!netErrShown){
-        netErrShown=true;
-        toast('Sloja omrežja ni mogoče naložiti.');
-      }
-    });
+    // Če so črte za trenutno območje že v pomnilniku, ni nobenega novega klica.
+    if(netOverlay&&netOverlayBounds&&netOverlayBounds.contains(viewBounds))return;
+    if(netPendingBounds&&netPendingBounds.contains(viewBounds))return;
 
-    netWms.addTo(map);
-  },80);
+    var reqBounds=viewBounds.pad(0.55);
+    var sw=toD96(reqBounds.getWest(),reqBounds.getSouth());
+    var ne=toD96(reqBounds.getEast(),reqBounds.getNorth());
+    var bbox=[sw[0],sw[1],ne[0],ne[1]].join(',');
+
+    var url=NET_WFS+
+      '?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature'+
+      '&TYPENAMES='+encodeURIComponent(lineName)+
+      '&OUTPUTFORMAT='+encodeURIComponent('application/json')+
+      '&SRSNAME=EPSG%3A4326'+
+      '&BBOX='+encodeURIComponent(bbox+',EPSG:3794');
+
+    if(netAbort){try{netAbort.abort()}catch(e){}}
+    netAbort=window.AbortController?new AbortController():null;
+    netPendingBounds=reqBounds;
+    var seq=++netReqSeq;
+
+    if(el('netStatus'))el('netStatus').textContent='Nalagam elektro vode ...';
+
+    fetch(url,netAbort?{signal:netAbort.signal,cache:'default'}:{cache:'default'})
+      .then(function(r){
+        if(!r.ok)throw new Error('WFS '+r.status);
+        return r.json();
+      })
+      .then(function(data){
+        if(seq!==netReqSeq)return;
+        netPendingBounds=null;
+        netAbort=null;
+        if(!data||data.type!=='FeatureCollection')throw new Error('Neveljaven WFS odgovor');
+
+        var layer=L.geoJSON(data,{
+          pane:'netPane',
+          interactive:false,
+          style:function(){return {color:'#d50000',weight:3,opacity:0.92,lineCap:'round',lineJoin:'round'}}
+        });
+
+        map.getPane('netPane').style.filter='none';
+        if(netWms){try{map.removeLayer(netWms)}catch(e){}netWms=null}
+        var old=netOverlay;
+        netOverlay=layer.addTo(map);
+        netOverlayBounds=reqBounds;
+        netOverlayZoom=map.getZoom();
+        if(old&&old!==layer){try{map.removeLayer(old)}catch(e){}}
+        netErrShown=false;
+
+        var n=data.features&&data.features.length||0;
+        if(el('netStatus'))el('netStatus').textContent='✓ Elektro vodi prikazani'+(n?' • '+n+' odsekov':'');
+      })
+      .catch(function(err){
+        if(err&&err.name==='AbortError')return;
+        if(seq!==netReqSeq)return;
+        netPendingBounds=null;
+        netAbort=null;
+        console.error('GURS WFS:',err);
+        netWmsFallback();
+      });
+  },160);
 }
 function iconFor(x){var c=color(x);return L.divIcon({className:'',html:'<div style="width:24px;height:24px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:'+c+';border:3px solid white;box-shadow:0 2px 6px #0006"><span style="display:block;width:6px;height:6px;background:#fff;border-radius:50%;margin:6px"></span></div>',iconSize:[24,24],iconAnchor:[12,24]})}
 function renderMarkers(){
@@ -1563,17 +1643,11 @@ async function enterApp(){
       netErrShown=false;
       netClear();
       netSrs=[];
-      netSel=NET_DEFAULT.map(function(l){return l.name});
+      netSel=[NET_DEFAULT[0].name];
       netCaps(true);
       refreshOrtho();
     }catch(e){console.error(e)}
   },300);
-
-  setTimeout(function(){
-    try{
-      if(map&&netSel.length)refreshNet();
-    }catch(e){console.error(e)}
-  },2200);
 
   try{
     var mig=await importLegacyIssues();
