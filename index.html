@@ -1265,7 +1265,7 @@ function initMap(){
 
   map.on('click',function(e){openNew(e.latlng.lat,e.latlng.lng)});
   map.on('moveend zoomend resize',refreshOrtho);
-  map.on('moveend zoomend resize',function(){if(netOverlay||(netSel.length&&!netWms))refreshNet()});
+  map.on('moveend zoomend resize',function(){if(netSel.length&&!netWms)refreshNet()});
 
   setTimeout(function(){
     try{map.invalidateSize(true)}catch(e){}
@@ -1273,7 +1273,7 @@ function initMap(){
   },250);
 }
 
-var NET_BASE='https://ipi.eprostor.gov.si/wms-si-gurs/wms';
+var NET_BASE='https://ipi.eprostor.gov.si/wms-si-gurs-kgi/wms';
 var NET_DEFAULT=[{name:'SI.GURS.KGI:LINIJE_ELEKTRICNA_ENERGIJA_G',title:'Elektrika – vodi (GJI)'},{name:'SI.GURS.KGI:TOCKE_ELEKTRICNA_ENERGIJA_G',title:'Elektrika – točke, drogovi, objekti (GJI)'},{name:'SI.GURS.KGI:POLIGONI_ELEKTRICNA_ENERGIJA_G',title:'Elektrika – poligoni (GJI)'}];
 var netLayers=NET_DEFAULT.slice(),netSel=NET_DEFAULT.map(function(l){return l.name}),netSrs=[],netOverlay=null,netWms=null,netTimer=null,netErrShown=false,netReqSeq=0,netOverlayBounds=null,netOverlayZoom=null;
 function netList(){
@@ -1308,60 +1308,44 @@ function refreshNet(){
   netTimer=setTimeout(function(){
     if(!netSel.length){netClear();return}
 
-    var viewBounds=map.getBounds(),zoom=map.getZoom();
+    var layerNames=netSel.join(',');
 
-    // Če je trenutni pogled še znotraj že naložene večje slike in zoom ni spremenjen,
-    // GURS-a ne kličemo ponovno.
-    if(netOverlay&&netOverlayBounds&&netOverlayZoom===zoom&&netOverlayBounds.contains(viewBounds))return;
+    // Če je WMS plast že aktivna z istimi sloji, je ne ustvarjamo ponovno.
+    if(netWms&&netWms.__layers===layerNames)return;
 
-    // Naložimo nekoliko večje območje od zaslona, zato manjši premiki ne sprožijo novega WMS klica.
-    var reqBounds=viewBounds.pad(0.20);
-    var sw=toD96(reqBounds.getWest(),reqBounds.getSouth());
-    var ne=toD96(reqBounds.getEast(),reqBounds.getNorth());
-    var sz=map.getSize();
-    var scale=Math.min(window.devicePixelRatio||1,1.35);
-    var padScale=1.40;
-    var w=Math.max(256,Math.min(900,Math.round(sz.x*scale*padScale)));
-    var hh=Math.max(256,Math.min(900,Math.round(sz.y*scale*padScale)));
+    netClear();
 
-    var url=NET_BASE+
-      '?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap'+
-      '&FORMAT=image%2Fpng&TRANSPARENT=true&STYLES='+
-      '&LAYERS='+encodeURIComponent(netSel.join(','))+
-      '&WIDTH='+w+'&HEIGHT='+hh+
-      '&SRS=EPSG%3A3794'+
-      '&BBOX='+[sw[0],sw[1],ne[0],ne[1]].join('%2C');
-
-    var seq=++netReqSeq;
-    var oldOverlay=netOverlay;
-    var candidate=L.imageOverlay(url,reqBounds,{pane:'netPane',interactive:false,opacity:0});
-
-    candidate.on('load',function(){
-      if(seq!==netReqSeq){
-        try{map.removeLayer(candidate)}catch(e){}
-        return;
-      }
-      netErrShown=false;
-      candidate.setOpacity(1);
-      netOverlay=candidate;
-      netOverlayBounds=reqBounds;
-      netOverlayZoom=zoom;
-      if(oldOverlay&&oldOverlay!==candidate){
-        try{map.removeLayer(oldOverlay)}catch(e){}
-      }
+    // Namenski KGI WMS nalagamo po majhnih ploščicah.
+    // Tako se najprej pokaže bližnje omrežje, ostalo pa se dopolni sproti.
+    netWms=L.tileLayer.wms(NET_BASE,{
+      layers:layerNames,
+      format:'image/png',
+      transparent:true,
+      version:'1.1.1',
+      pane:'netPane',
+      tileSize:256,
+      updateWhenIdle:true,
+      updateWhenZooming:false,
+      keepBuffer:4,
+      detectRetina:false,
+      maxZoom:22,
+      attribution:'GURS KGI'
     });
+    netWms.__layers=layerNames;
 
-    candidate.on('error',function(){
-      try{map.removeLayer(candidate)}catch(e){}
+    netWms.on('tileload',function(){
+      netErrShown=false;
+      if(el('netStatus'))el('netStatus').textContent='Elektro omrežje • GURS KGI';
+    });
+    netWms.on('tileerror',function(){
       if(!netErrShown){
         netErrShown=true;
         toast('Sloja omrežja ni mogoče naložiti.');
       }
     });
 
-    // Samo en HTTP zahtevek: Leaflet naloži sliko neposredno.
-    candidate.addTo(map);
-  },120);
+    netWms.addTo(map);
+  },80);
 }
 function iconFor(x){var c=color(x);return L.divIcon({className:'',html:'<div style="width:24px;height:24px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:'+c+';border:3px solid white;box-shadow:0 2px 6px #0006"><span style="display:block;width:6px;height:6px;background:#fff;border-radius:50%;margin:6px"></span></div>',iconSize:[24,24],iconAnchor:[12,24]})}
 function renderMarkers(){
