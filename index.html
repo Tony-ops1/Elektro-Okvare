@@ -1440,18 +1440,36 @@ function renderMarkers(){
   })
 }
 window.editIssue=function(id){var x=issues.find(function(i){return i.id===id});if(x)openEdit(x)}
-function card(x,adminAction){
+function card(x,adminAction,showLocation){
   var dt=x.reportedAt?new Date(x.reportedAt).toLocaleString('sl-SI'):'';
   var action='';
-  if(currentProfile&&currentProfile.role==='admin'&&adminAction==='archive'){
-    action='<button type="button" class="btn danger quickArchive" data-action-id="'+esc(x.id)+'" style="margin-top:8px;padding:8px 10px;white-space:nowrap">📦 ARHIVIRAJ</button>';
-  }else if(currentProfile&&currentProfile.role==='admin'&&adminAction==='restore'){
-    action='<button type="button" class="btn secondary quickRestore" data-action-id="'+esc(x.id)+'" style="margin-top:8px;padding:8px 10px;white-space:nowrap">↩ OBNOVI</button>';
+  if(showLocation&&isFinite(Number(x.lat))&&isFinite(Number(x.lng))){
+    action+='<button type="button" class="btn secondary showLocationBtn" data-action-id="'+esc(x.id)+'" style="margin-top:8px;padding:8px 10px;white-space:nowrap">📍 POKAŽI LOKACIJO</button>';
   }
-  return '<div class="card" data-id="'+x.id+'"><div class="bar" style="background:'+color(x)+'"></div><div class="body"><div class="title">'+esc(x.type||'Napaka')+(x.faultDetail?' • '+esc(x.faultDetail):'')+'</div><div class="meta">'+(x.locationAddress?'<span>📍 '+esc(x.locationAddress)+'</span>':'')+'<span>🕒 '+esc(dt)+'</span><span>🔧 '+esc(x.status)+'</span></div>'+(x.description?'<div class="desc">'+esc(x.description)+'</div>':'')+'</div><div class="side"><span class="pill '+esc(x.priority)+'">'+esc(x.priority)+'</span>'+action+'</div></div>'
+  if(currentProfile&&currentProfile.role==='admin'&&adminAction==='archive'){
+    action+='<button type="button" class="btn danger quickArchive" data-action-id="'+esc(x.id)+'" style="margin-top:8px;padding:8px 10px;white-space:nowrap">📦 ARHIVIRAJ</button>';
+  }else if(currentProfile&&currentProfile.role==='admin'&&adminAction==='restore'){
+    action+='<button type="button" class="btn secondary quickRestore" data-action-id="'+esc(x.id)+'" style="margin-top:8px;padding:8px 10px;white-space:nowrap">↩ OBNOVI</button>';
+  }
+  return '<div class="card" data-id="'+x.id+'"><div class="bar" style="background:'+color(x)+'"></div><div class="body"><div class="title">'+esc(x.type||'Napaka')+(x.faultDetail?' • '+esc(x.faultDetail):'')+'</div><div class="meta">'+(x.locationAddress?'<span>📍 '+esc(x.locationAddress)+'</span>':'')+'<span>🕒 '+esc(dt)+'</span><span>🔧 '+esc(x.status)+'</span></div>'+(x.description?'<div class="desc">'+esc(x.description)+'</div>':'')+'</div><div class="side" style="flex-direction:column;align-items:flex-end"><span class="pill '+esc(x.priority)+'">'+esc(x.priority)+'</span>'+action+'</div></div>'
 }
 function bindCards(box){
   box.querySelectorAll('.card').forEach(function(c){c.onclick=function(){window.editIssue(c.dataset.id)}});
+  box.querySelectorAll('.showLocationBtn').forEach(function(b){b.onclick=function(e){
+    e.stopPropagation();
+    var x=issues.find(function(i){return i.id===b.dataset.actionId});
+    if(!x)return;
+    var lat=Number(x.lat),lng=Number(x.lng);
+    if(!isFinite(lat)||!isFinite(lng)){toast('Lokacija ni shranjena');return}
+    showView('mapView');
+    setTimeout(function(){
+      try{
+        map.invalidateSize(true);
+        map.setView([lat,lng],19);
+        if(markers[x.id])markers[x.id].openPopup();
+      }catch(err){console.error(err)}
+    },80);
+  }});
   box.querySelectorAll('.quickArchive').forEach(function(b){b.onclick=async function(e){
     e.stopPropagation();
     if(!currentProfile||currentProfile.role!=='admin'){toast('Samo admin lahko arhivira');return}
@@ -1477,7 +1495,7 @@ function renderLists(){
   var q=el('search').value.trim().toLowerCase(),a=el('areaFilter').value,t=el('typeFilter').value,p=el('priorityFilter').value;
   var active=issues.filter(function(x){return !x.archivedAt});
   var open=active.filter(function(x){return CLOSED.indexOf(x.status)<0}).filter(function(x){var hh=[x.type,x.faultDetail,x.locationAddress,x.description,x.notes,x.reportedBy,x.assignedTo].join(' ').toLowerCase();return(!q||hh.indexOf(q)>=0)&&(!a||x.area===a)&&(!t||x.type===t)&&(!p||x.priority===p)});
-  el('openList').innerHTML=open.length?open.map(function(x){return card(x,'')}).join(''):'<div class="empty">Ni odprtih napak.</div>';bindCards(el('openList'));
+  el('openList').innerHTML=open.length?open.map(function(x){return card(x,'',true)}).join(''):'<div class="empty">Ni odprtih napak.</div>';bindCards(el('openList'));
   var done=active.filter(function(x){return CLOSED.indexOf(x.status)>=0});
   el('closedList').innerHTML=done.length?done.map(function(x){return card(x,'archive')}).join(''):'<div class="empty">Ni zaključenih napak.</div>';bindCards(el('closedList'));
   var archived=issues.filter(function(x){return !!x.archivedAt});
