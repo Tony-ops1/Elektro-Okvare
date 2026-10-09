@@ -1265,7 +1265,7 @@ function initMap(){
 
   map.on('click',function(e){openNew(e.latlng.lat,e.latlng.lng)});
   map.on('moveend zoomend resize',refreshOrtho);
-  map.on('moveend zoomend resize',function(){if(netSel.length&&!netWms)refreshNet()});
+  map.on('moveend zoomend resize',function(){if(netSel.length)refreshNet()});
 
   setTimeout(function(){
     try{map.invalidateSize(true)}catch(e){}
@@ -1276,7 +1276,14 @@ function initMap(){
 var NET_BASE='https://ipi.eprostor.gov.si/wms-si-gurs-kgi/wms';
 var NET_WFS='https://ipi.eprostor.gov.si/wfs-si-gurs-kgi/wfs';
 var NET_DEFAULT=[{name:'SI.GURS.KGI:LINIJE_ELEKTRICNA_ENERGIJA_G',title:'Elektrika – vodi (GJI)'},{name:'SI.GURS.KGI:TOCKE_ELEKTRICNA_ENERGIJA_G',title:'Elektrika – točke, drogovi, objekti (GJI)'},{name:'SI.GURS.KGI:POLIGONI_ELEKTRICNA_ENERGIJA_G',title:'Elektrika – poligoni (GJI)'}];
-var netLayers=NET_DEFAULT.slice(),netSel=[NET_DEFAULT[0].name],netSrs=[],netOverlay=null,netWms=null,netTimer=null,netErrShown=false,netReqSeq=0,netOverlayBounds=null,netOverlayZoom=null,netPendingBounds=null,netAbort=null;
+
+// Hiter prikaz: električni vodi so razdeljeni na stalne ~2 km kvadrate.
+// Vsak kvadrat se po prvem prenosu shrani v IndexedDB in se naslednjič izriše takoj.
+var NET_GRID=0.02,NET_CACHE_MS=24*60*60*1000;
+var netLayers=NET_DEFAULT.slice(),netSel=[NET_DEFAULT[0].name],netSrs=[];
+var netOverlay=null,netWms=null,netTimer=null,netErrShown=false;
+var netTileLayers={},netTileData={},netWanted={},netLoading={},netQueue=[],netWorkers=0,netDbPromise=null;
+
 function netList(){
   var q=el('netFilter').value.trim().toLowerCase();
   var arr=netLayers.filter(function(l){return !q||(l.title+' '+l.name).toLowerCase().indexOf(q)>=0});
@@ -1292,54 +1299,169 @@ function netCaps(autoEnable){
   netLayers=NET_DEFAULT.slice();
   if(!netSel.length)netSel=[NET_DEFAULT[0].name];
   netList();
-  el('netStatus').textContent='Električni vodi • hitri vektorski prikaz GURS KGI';
+  el('netStatus').textContent='Električni vodi • hitri predpomnjeni prikaz';
   if(autoEnable)refreshNet();
 }
+function netDb(){
+  if(netDbPromise)return netDbPromise;
+  netDbPromise=new Promise(function(resolve,reject){
+    if(!window.indexedDB){reject(new Error('IndexedDB ni na voljo'));return}
+    var r=indexedDB.open('elektro-okvare-net-v1',1);
+    r.onupgradeneeded=function(){
+      var db=r.result;
+      if(!db.objectStoreNames.contains('tiles'))db.createObjectStore('tiles',{keyPath:'key'});
+    };
+    r.onsuccess=function(){resolve(r.result)};
+    r.onerror=function(){reject(r.error||new Error('IndexedDB napaka'))};
+  });
+  return netDbPromise;
+}
+function netCacheGet(key){
+  return netDb().then(function(db){
+    return new Promise(function(resolve){
+      try{
+        var tx=db.transaction('tiles','readonly'),rq=tx.objectStore('tiles').get(key);
+        rq.onsuccess=function(){resolve(rq.result||null)};
+        rq.onerror=function(){resolve(null)};
+      }catch(e){resolve(null)}
+    });
+  }).catch(function(){return null});
+}
+function netCachePut(key,data){
+  return netDb().then(function(db){
+    return new Promise(function(resolve){
+      try{
+        var tx=db.transaction('tiles','readwrite');
+        tx.objectStore('tiles').put({key:key,ts:Date.now(),data:data});
+        tx.oncomplete=function(){resolve()};
+        tx.onerror=function(){resolve()};
+      }catch(e){resolve()}
+    });
+  }).catch(function(){});
+}
+function netGridInfo(ix,iy){
+  var west=ix*NET_GRID,south=iy*NET_GRID;
+  return {key:ix+'_'+iy,west:west,south:south,east:west+NET_GRID,north:south+NET_GRID};
+}
+function netNeededTiles(bounds,margin){
+  margin=margin||0;
+  var minX=Math.floor(bounds.getWest()/NET_GRID)-margin;
+  var maxX=Math.floor(bounds.getEast()/NET_GRID)+margin;
+  var minY=Math.floor(bounds.getSouth()/NET_GRID)-margin;
+  var maxY=Math.floor(bounds.getNorth()/NET_GRID)+margin;
+  var a=[];
+  for(var y=minY;y<=maxY;y++)for(var x=minX;x<=maxX;x++)a.push(netGridInfo(x,y));
+  var c=bounds.getCenter();
+  a.sort(function(p,q){
+    var pd=Math.pow((p.west+p.east)/2-c.lng,2)+Math.pow((p.south+p.north)/2-c.lat,2);
+    var qd=Math.pow((q.west+q.east)/2-c.lng,2)+Math.pow((q.south+q.north)/2-c.lat,2);
+    return pd-qd;
+  });
+  return a;
+}
+function netDrawTile(key,data){
+  if(!map||!data||data.type!=='FeatureCollection')return;
+  netTileData[key]=data;
+  if(netTileLayers[key]){
+    if(netWanted[key]&&!map.hasLayer(netTileLayers[key]))netTileLayers[key].addTo(map);
+    return;
+  }
+  var layer=L.geoJSON(data,{
+    pane:'netPane',
+    interactive:false,
+    style:function(){return {color:'#d50000',weight:3,opacity:.94,lineCap:'round',lineJoin:'round'}}
+  });
+  netTileLayers[key]=layer;
+  if(netWanted[key])layer.addTo(map);
+}
+function netRemoveFarTiles(){
+  Object.keys(netTileLayers).forEach(function(key){
+    var layer=netTileLayers[key];
+    if(!netWanted[key]&&map&&map.hasLayer(layer)){
+      try{map.removeLayer(layer)}catch(e){}
+    }
+  });
+}
+function netFetchTile(t){
+  if(netLoading[t.key])return;
+  netLoading[t.key]=true;
+  var sw=toD96(t.west,t.south),ne=toD96(t.east,t.north);
+  var bbox=[sw[0],sw[1],ne[0],ne[1]].join(',');
+  var url=NET_WFS+
+    '?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature'+
+    '&TYPENAMES='+encodeURIComponent(NET_DEFAULT[0].name)+
+    '&OUTPUTFORMAT='+encodeURIComponent('application/json')+
+    '&SRSNAME=EPSG%3A4326'+
+    '&BBOX='+encodeURIComponent(bbox+',EPSG:3794');
+
+  fetch(url,{cache:'default'}).then(function(r){
+    if(!r.ok)throw new Error('WFS '+r.status);
+    return r.json();
+  }).then(function(data){
+    if(!data||data.type!=='FeatureCollection')throw new Error('Neveljaven WFS odgovor');
+    netDrawTile(t.key,data);
+    netCachePut(t.key,data);
+    netErrShown=false;
+  }).catch(function(err){
+    console.error('GURS elektro '+t.key+':',err);
+    if(!netErrShown){
+      netErrShown=true;
+      if(el('netStatus'))el('netStatus').textContent='Elektro omrežje: GURS se odziva počasi.';
+    }
+  }).finally(function(){
+    delete netLoading[t.key];
+    netWorkers=Math.max(0,netWorkers-1);
+    netPump();
+  });
+}
+function netPump(){
+  while(netWorkers<3&&netQueue.length){
+    var t=netQueue.shift();
+    if(!netWanted[t.key]||netLoading[t.key])continue;
+    netWorkers++;
+    netFetchTile(t);
+  }
+}
+function netLoadTile(t){
+  if(netTileData[t.key]){
+    netDrawTile(t.key,netTileData[t.key]);
+    return;
+  }
+  netCacheGet(t.key).then(function(cached){
+    if(cached&&cached.data){
+      // Stari cache se pokaže takoj; če je prestar, se samo osveži v ozadju.
+      netDrawTile(t.key,cached.data);
+      if(Date.now()-(cached.ts||0)<NET_CACHE_MS)return;
+    }
+    if(!netLoading[t.key]&&!netQueue.some(function(x){return x.key===t.key})){
+      netQueue.push(t);
+      netPump();
+    }
+  });
+}
 function netClear(){
-  netReqSeq++;
   clearTimeout(netTimer);
-  if(netAbort){try{netAbort.abort()}catch(e){}netAbort=null}
-  netPendingBounds=null;
-  netOverlayBounds=null;
-  netOverlayZoom=null;
+  netWanted={};
+  netQueue=[];
   if(netWms){try{map.removeLayer(netWms)}catch(e){}netWms=null}
-  if(netOverlay){try{map.removeLayer(netOverlay)}catch(e){}netOverlay=null}
+  Object.keys(netTileLayers).forEach(function(k){
+    try{if(map.hasLayer(netTileLayers[k]))map.removeLayer(netTileLayers[k])}catch(e){}
+  });
 }
 function netWmsFallback(){
   if(!map||!netSel.length)return;
   var layerNames=netSel.join(',');
   if(netWms&&netWms.__layers===layerNames)return;
-
-  if(netOverlay){try{map.removeLayer(netOverlay)}catch(e){}netOverlay=null}
+  Object.keys(netTileLayers).forEach(function(k){try{if(map.hasLayer(netTileLayers[k]))map.removeLayer(netTileLayers[k])}catch(e){}});
   if(netWms){try{map.removeLayer(netWms)}catch(e){}netWms=null}
-
   map.getPane('netPane').style.filter='hue-rotate(240deg) saturate(1.55)';
   netWms=L.tileLayer.wms(NET_BASE,{
-    layers:layerNames,
-    format:'image/png',
-    transparent:true,
-    version:'1.1.1',
-    pane:'netPane',
-    tileSize:512,
-    updateWhenIdle:true,
-    updateWhenZooming:false,
-    keepBuffer:1,
-    detectRetina:false,
-    tiled:true,
-    maxZoom:22,
-    attribution:'GURS KGI'
+    layers:layerNames,format:'image/png',transparent:true,version:'1.1.1',
+    pane:'netPane',tileSize:512,updateWhenIdle:false,updateWhenZooming:true,
+    keepBuffer:2,detectRetina:false,tiled:true,maxZoom:22,attribution:'GURS KGI'
   });
   netWms.__layers=layerNames;
-  netWms.on('tileload',function(){
-    netErrShown=false;
-    if(el('netStatus'))el('netStatus').textContent='Elektro omrežje • rezervni WMS prikaz';
-  });
-  netWms.on('tileerror',function(){
-    if(!netErrShown){
-      netErrShown=true;
-      toast('Sloja omrežja ni mogoče naložiti.');
-    }
-  });
+  netWms.on('tileload',function(){netErrShown=false});
   netWms.addTo(map);
 }
 function refreshNet(){
@@ -1347,85 +1469,31 @@ function refreshNet(){
   clearTimeout(netTimer);
   netTimer=setTimeout(function(){
     if(!netSel.length){netClear();return}
-
-    var lineName=NET_DEFAULT[0].name;
-    var onlyLines=netSel.length===1&&netSel[0]===lineName;
-
-    // Točke/poligoni so opcijski; zanje ostane WMS.
+    var onlyLines=netSel.length===1&&netSel[0]===NET_DEFAULT[0].name;
     if(!onlyLines){netWmsFallback();return}
 
-    // GURS KGI je namenjen podrobnejšemu prikazu; pri premajhnem zoomu ne obremenjujemo strežnika.
+    if(netWms){try{map.removeLayer(netWms)}catch(e){}netWms=null}
+    map.getPane('netPane').style.filter='none';
+
     if(map.getZoom()<15){
-      if(netWms){try{map.removeLayer(netWms)}catch(e){}netWms=null}
-      if(netOverlay){try{map.removeLayer(netOverlay)}catch(e){}netOverlay=null}
-      netOverlayBounds=null;
       if(el('netStatus'))el('netStatus').textContent='Za elektro omrežje približaj zemljevid.';
       return;
     }
 
-    var viewBounds=map.getBounds();
+    var needed=netNeededTiles(map.getBounds(),1);
+    var wanted={};
+    needed.forEach(function(t){wanted[t.key]=true});
+    netWanted=wanted;
+    netRemoveFarTiles();
 
-    // Če so črte za trenutno območje že v pomnilniku, ni nobenega novega klica.
-    if(netOverlay&&netOverlayBounds&&netOverlayBounds.contains(viewBounds))return;
-    if(netPendingBounds&&netPendingBounds.contains(viewBounds))return;
+    // Najprej pokaži vse, kar je že v RAM-u, nato takoj preberi lokalni cache.
+    needed.forEach(function(t){
+      if(netTileData[t.key])netDrawTile(t.key,netTileData[t.key]);
+      else netLoadTile(t);
+    });
 
-    var reqBounds=viewBounds.pad(0.55);
-    var sw=toD96(reqBounds.getWest(),reqBounds.getSouth());
-    var ne=toD96(reqBounds.getEast(),reqBounds.getNorth());
-    var bbox=[sw[0],sw[1],ne[0],ne[1]].join(',');
-
-    var url=NET_WFS+
-      '?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature'+
-      '&TYPENAMES='+encodeURIComponent(lineName)+
-      '&OUTPUTFORMAT='+encodeURIComponent('application/json')+
-      '&SRSNAME=EPSG%3A4326'+
-      '&BBOX='+encodeURIComponent(bbox+',EPSG:3794');
-
-    if(netAbort){try{netAbort.abort()}catch(e){}}
-    netAbort=window.AbortController?new AbortController():null;
-    netPendingBounds=reqBounds;
-    var seq=++netReqSeq;
-
-    if(el('netStatus'))el('netStatus').textContent='Nalagam elektro vode ...';
-
-    fetch(url,netAbort?{signal:netAbort.signal,cache:'default'}:{cache:'default'})
-      .then(function(r){
-        if(!r.ok)throw new Error('WFS '+r.status);
-        return r.json();
-      })
-      .then(function(data){
-        if(seq!==netReqSeq)return;
-        netPendingBounds=null;
-        netAbort=null;
-        if(!data||data.type!=='FeatureCollection')throw new Error('Neveljaven WFS odgovor');
-
-        var layer=L.geoJSON(data,{
-          pane:'netPane',
-          interactive:false,
-          style:function(){return {color:'#d50000',weight:3,opacity:0.92,lineCap:'round',lineJoin:'round'}}
-        });
-
-        map.getPane('netPane').style.filter='none';
-        if(netWms){try{map.removeLayer(netWms)}catch(e){}netWms=null}
-        var old=netOverlay;
-        netOverlay=layer.addTo(map);
-        netOverlayBounds=reqBounds;
-        netOverlayZoom=map.getZoom();
-        if(old&&old!==layer){try{map.removeLayer(old)}catch(e){}}
-        netErrShown=false;
-
-        var n=data.features&&data.features.length||0;
-        if(el('netStatus'))el('netStatus').textContent='✓ Elektro vodi prikazani'+(n?' • '+n+' odsekov':'');
-      })
-      .catch(function(err){
-        if(err&&err.name==='AbortError')return;
-        if(seq!==netReqSeq)return;
-        netPendingBounds=null;
-        netAbort=null;
-        console.error('GURS WFS:',err);
-        netWmsFallback();
-      });
-  },160);
+    if(el('netStatus'))el('netStatus').textContent='Elektro vodi • lokalni hitri prikaz';
+  },70);
 }
 function iconFor(x){var c=color(x);return L.divIcon({className:'',html:'<div style="width:24px;height:24px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:'+c+';border:3px solid white;box-shadow:0 2px 6px #0006"><span style="display:block;width:6px;height:6px;background:#fff;border-radius:50%;margin:6px"></span></div>',iconSize:[24,24],iconAnchor:[12,24]})}
 function renderMarkers(){
