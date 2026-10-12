@@ -803,6 +803,7 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
       <input type="hidden" id="lat">
       <input type="hidden" id="lng">
       <div class="field"><label>Datum in ura</label><input id="reportedAt" type="datetime-local" required></div>
+      <div class="field"><label>NAZIV SREDSTVA</label><input id="assetName" placeholder="Vpiši naziv sredstva ..."></div>
       <div class="field"><label>Vrsta okvare</label><select id="faultType"></select><input id="faultTypeCustom" placeholder="Vpiši drugo vrsto okvare ..."></div>
       <div class="field"><label>Napaka / opravilo</label><select id="faultDetail"></select><input id="faultDetailCustom" placeholder="Vpiši drugo napako / opravilo ..."></div>
       <div class="field"><label>Prioriteta</label><select id="priority"><option>kritično</option><option>visoka</option><option selected>normalna</option><option>nizka</option></select></div>
@@ -959,7 +960,7 @@ function slugUsername(v){return String(v||'').trim().toLowerCase().normalize('NF
 function authPassword(pin){return 'EO-'+String(pin||'')+'-okvare!'}
 function dbToIssue(r,photoMap){return {
   id:r.id,reportedAt:r.reported_at,lat:r.lat,lng:r.lng,locationAddress:r.location_address||'',
-  area:'',object:'',ident:'',maximo:'',type:r.type||'',faultDetail:r.fault_detail||'',
+  area:'',object:'',ident:'',maximo:'',assetName:r.asset_name||'',type:r.type||'',faultDetail:r.fault_detail||'',
   priority:r.priority||'normalna',status:r.status||'prijavljeno',
   reportedBy:r.reported_by_name||'',assignedTo:r.assigned_to_name||'',
   description:r.description||'',notes:r.notes||'',photos:(photoMap&&photoMap[r.id])||[],
@@ -1562,7 +1563,7 @@ function bindCards(box){
 function renderLists(){
   var q=el('search').value.trim().toLowerCase(),a=el('areaFilter').value,t=el('typeFilter').value,p=el('priorityFilter').value;
   var active=issues.filter(function(x){return !x.archivedAt});
-  var open=active.filter(function(x){return CLOSED.indexOf(x.status)<0}).filter(function(x){var hh=[x.type,x.faultDetail,x.locationAddress,x.description,x.notes,x.reportedBy,x.assignedTo].join(' ').toLowerCase();return(!q||hh.indexOf(q)>=0)&&(!a||x.area===a)&&(!t||x.type===t)&&(!p||x.priority===p)});
+  var open=active.filter(function(x){return CLOSED.indexOf(x.status)<0}).filter(function(x){var hh=[x.assetName,x.type,x.faultDetail,x.locationAddress,x.description,x.notes,x.reportedBy,x.assignedTo].join(' ').toLowerCase();return(!q||hh.indexOf(q)>=0)&&(!a||x.area===a)&&(!t||x.type===t)&&(!p||x.priority===p)});
   el('openList').innerHTML=open.length?open.map(function(x){return card(x,'',true)}).join(''):'<div class="empty">Ni odprtih napak.</div>';bindCards(el('openList'));
   var done=active.filter(function(x){return CLOSED.indexOf(x.status)>=0});
   el('closedList').innerHTML=done.length?done.map(function(x){return card(x,'archive')}).join(''):'<div class="empty">Ni zaključenih napak.</div>';bindCards(el('closedList'));
@@ -1643,6 +1644,7 @@ function openEdit(x){
   el('reportedAt').value=x.reportedAt||nowInput();
   el('lat').value=x.lat;
   el('lng').value=x.lng;
+  el('assetName').value=x.assetName||'';
   if(TYPES.indexOf(x.type)>=0){
     el('faultType').value=x.type;
     el('faultTypeCustom').value='';
@@ -1843,6 +1845,7 @@ el('issueForm').onsubmit=async function(e){
   var payload={
     reported_at:new Date(el('reportedAt').value).toISOString(),
     lat:lat,lng:lng,location_address:old?old.locationAddress||'':'',
+    asset_name:el('assetName').value.trim(),
     type:typeVal,fault_detail:detailVal,priority:el('priority').value,status:el('status').value,
     reported_by_name:el('reportedBy').value.trim()||(currentProfile.display_name||currentProfile.username),
     assigned_to_name:el('assignedTo').value.trim(),description:el('description').value.trim(),notes:el('notes').value.trim()
