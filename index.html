@@ -1504,7 +1504,7 @@ function renderMarkers(){
     if(x.archivedAt)return;
     var a=Number(x.lat),b=Number(x.lng);if(!isFinite(a)||!isFinite(b))return;
     var m=L.marker([a,b],{icon:iconFor(x)}).addTo(map);
-    m.bindPopup('<b>'+esc(x.type||'Napaka')+'</b>'+(x.faultDetail?'<br>'+esc(x.faultDetail):'')+(x.locationAddress?'<br>📍 '+esc(x.locationAddress):'')+'<br><small>'+esc(x.status)+'</small><br><button onclick="window.editIssue(\''+x.id+'\')" style="margin-top:7px;padding:7px 9px;border:0;border-radius:7px;background:#0b3a63;color:white">Odpri</button>');
+    m.bindPopup('<b>'+esc(x.type||'Napaka')+'</b>'+(x.assetName?'<br><b>Naziv sredstva:</b> '+esc(x.assetName):'')+(x.faultDetail?'<br>'+esc(x.faultDetail):'')+(x.locationAddress?'<br>📍 '+esc(x.locationAddress):'')+'<br><small>'+esc(x.status)+'</small><br><button onclick="window.editIssue(\''+x.id+'\')" style="margin-top:7px;padding:7px 9px;border:0;border-radius:7px;background:#0b3a63;color:white">Odpri</button>');
     markers[x.id]=m;
   })
 }
