@@ -800,6 +800,7 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
   <form id="issueForm">
     <div class="form">
       <input type="hidden" id="issueId">
+      <input type="hidden" id="clientRequestId">
       <input type="hidden" id="lat">
       <input type="hidden" id="lng">
       <div class="field"><label>Datum in ura</label><input id="reportedAt" type="datetime-local" required></div>
@@ -814,7 +815,7 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
       <div class="field full"><label>Opombe</label><textarea id="notes"></textarea></div>
       <div class="field full"><label>Fotografije</label><input id="photoInput" type="file" accept="image/*" capture="environment" multiple><div class="photos" id="photos"></div></div>
     </div>
-    <div class="actions"><button type="button" class="btn danger" id="hardDeleteBtn" style="display:none;background:#b71c1c;color:#fff">🗑️ IZBRIŠI</button><button type="button" class="btn secondary" id="deleteBtn" style="display:none">📦 Arhiviraj</button><button type="button" class="btn secondary" id="cancelBtn">Prekliči</button><button class="btn primary">Shrani</button></div>
+    <div class="actions"><button type="button" class="btn danger" id="hardDeleteBtn" style="display:none;background:#b71c1c;color:#fff">🗑️ IZBRIŠI</button><button type="button" class="btn secondary" id="deleteBtn" style="display:none">📦 Arhiviraj</button><button type="button" class="btn secondary" id="cancelBtn">Prekliči</button><button class="btn primary" id="saveIssueBtn">Shrani</button></div>
   </form>
 </div>
 </div>
@@ -946,6 +947,7 @@ var SUPABASE_URL='https://leeaxoqeplipcenkonsd.supabase.co';
 var SUPABASE_KEY='sb_publishable_lCgPzlBkEWYd7ak_TiAurA_8ITIcSIm';
 var sb=window.supabase?window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY):null;
 var currentProfile=null,realtimeChannel=null,reloadTimer=null;
+var issueSaving=false;
 var issues=[];
 var photos=[];
 var markers={};
@@ -953,6 +955,12 @@ var map=null,gpsMarker=null,searchMarker=null,lastGps=null,orthoOverlay=null,ort
 function el(id){return document.getElementById(id)}
 function esc(s){return String(s||'').replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
 function uid(){return 'o-'+Date.now()+'-'+Math.random().toString(16).slice(2)}
+function requestUuid(){
+  if(window.crypto&&crypto.randomUUID)return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,function(c){
+    var r=Math.random()*16|0,v=c==='x'?r:(r&3|8);return v.toString(16)
+  });
+}
 function toast(s){var t=el('toast');t.textContent=s;t.classList.add('show');clearTimeout(window.__tt);window.__tt=setTimeout(function(){t.classList.remove('show')},2200)}
 function nowInput(){var d=new Date(),z=function(n){return String(n).padStart(2,'0')};return d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate())+'T'+z(d.getHours())+':'+z(d.getMinutes())}
 function color(x){if(CLOSED.indexOf(x.status)>=0)return '#25824a';if(ORANGE.indexOf(x.status)>=0)return '#ef8b18';return '#c62828'}
@@ -1623,6 +1631,7 @@ function geocodeAddress(){
 function resetForm(){
   el('issueForm').reset();
   el('issueId').value='';
+  el('clientRequestId').value=requestUuid();
   el('reportedAt').value=nowInput();
   el('priority').value='normalna';
   el('status').value='prijavljeno';
@@ -1835,31 +1844,62 @@ el('mapSearchAddress').addEventListener('keydown',function(e){if(e.key==='Enter'
 el('photoInput').onchange=function(){addPhotos(this.files)}
 el('issueForm').onsubmit=async function(e){
   e.preventDefault();
+  if(issueSaving)return;
   if(!currentProfile||!sb){toast('Najprej se prijavi');return}
+
   var id=el('issueId').value||'',old=id?issues.find(function(x){return x.id===id}):null;
   var lat=Number(String(el('lat').value).replace(',','.')),lng=Number(String(el('lng').value).replace(',','.'));
   if(!isFinite(lat)||!isFinite(lng)){toast('Označi lokacijo okvare na zemljevidu');return}
+
   var typeCustom=el('faultTypeCustom').value.trim(),typeVal=typeCustom||el('faultType').value;
   var detailCustom=el('faultDetailCustom').value.trim(),detailVal=detailCustom||el('faultDetail').value;
   if(!typeVal){toast('Izberi ali vpiši vrsto okvare');return}
   if(!detailVal){toast('Izberi ali vpiši napako / opravilo');return}
 
-  var payload={
-    reported_at:new Date(el('reportedAt').value).toISOString(),
-    lat:lat,lng:lng,location_address:old?old.locationAddress||'':'',
-    asset_name:el('assetName').value.trim(),
-    type:typeVal,fault_detail:detailVal,priority:el('priority').value,status:el('status').value,
-    reported_by_name:el('reportedBy').value.trim()||(currentProfile.display_name||currentProfile.username),
-    assigned_to_name:el('assignedTo').value.trim(),description:el('description').value.trim(),notes:el('notes').value.trim()
-  };
-  var res=old
-    ?await sb.from('issues').update(payload).eq('id',id).select().single()
-    :await sb.from('issues').insert(payload).select().single();
-  if(res.error){console.error(res.error);toast('Shranjevanje ni uspelo');return}
-  var failed=await uploadNewPhotos(res.data.id);
-  await loadSharedIssues();closeModal();showView('mapView');
-  if(map)map.setView([lat,lng],16);
-  toast(failed?'Napaka shranjena, nekaj slik ni uspelo':(old?'Napaka posodobljena':'Napaka shranjena'));
+  issueSaving=true;
+  var saveBtn=el('saveIssueBtn');
+  if(saveBtn){saveBtn.disabled=true;saveBtn.textContent='Shranjujem ...'}
+
+  try{
+    var payload={
+      reported_at:new Date(el('reportedAt').value).toISOString(),
+      lat:lat,lng:lng,location_address:old?old.locationAddress||'':'',
+      asset_name:el('assetName').value.trim(),
+      type:typeVal,fault_detail:detailVal,priority:el('priority').value,status:el('status').value,
+      reported_by_name:el('reportedBy').value.trim()||(currentProfile.display_name||currentProfile.username),
+      assigned_to_name:el('assignedTo').value.trim(),description:el('description').value.trim(),notes:el('notes').value.trim()
+    };
+
+    if(!old){
+      payload.client_request_id=el('clientRequestId').value||requestUuid();
+      el('clientRequestId').value=payload.client_request_id;
+    }
+
+    var res=old
+      ?await sb.from('issues').update(payload).eq('id',id).select().single()
+      :await sb.from('issues').insert(payload).select().single();
+
+    // Če je isti zahtevek iOS vseeno poslal dvakrat, baza drugega zavrne.
+    // V tem primeru vzamemo že ustvarjen zapis in nadaljujemo normalno.
+    if(!old&&res.error&&res.error.code==='23505'){
+      res=await sb.from('issues').select('*').eq('client_request_id',payload.client_request_id).single();
+    }
+
+    if(res.error)throw res.error;
+
+    var failed=await uploadNewPhotos(res.data.id);
+    await loadSharedIssues();
+    closeModal();
+    showView('mapView');
+    if(map)map.setView([lat,lng],16);
+    toast(failed?'Napaka shranjena, nekaj slik ni uspelo':(old?'Napaka posodobljena':'Napaka shranjena'));
+  }catch(err){
+    console.error(err);
+    toast('Shranjevanje ni uspelo');
+  }finally{
+    issueSaving=false;
+    if(saveBtn){saveBtn.disabled=false;saveBtn.textContent='Shrani'}
+  }
 }
 async function hardDeleteIssue(id){
   var s=await sb.auth.getSession();
