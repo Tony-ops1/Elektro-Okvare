@@ -727,7 +727,6 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
   </div>
   <nav>
     <button class="active" data-view="mapView">🗺️ ZEMLJEVID</button>
-    <button id="newBtn">➕ NOVA NAPAKA</button>
     <button data-view="openView">🔴 ODPRTE</button>
     <button data-view="myView">👷 MOJE</button>
     <button data-view="closedView">✅ ZAKLJUČENE</button>
@@ -1952,7 +1951,6 @@ el('setupBtn').onclick=function(){setupAdminNow().catch(function(e){el('authMsg'
 el('logoutBtn').onclick=async function(){if(realtimeChannel){try{await sb.removeChannel(realtimeChannel)}catch(e){}realtimeChannel=null}await sb.auth.signOut();currentProfile=null;issues=[];renderAll();applyRoleUi();await showAuth()};
 el('userAddBtn').onclick=function(){addUserNow().catch(function(e){toast(e.message)})};
 document.querySelectorAll('nav button[data-view]').forEach(function(b){b.onclick=function(){showView(b.dataset.view);if(b.dataset.view==='usersView')loadUsers().catch(function(e){toast(e.message)})}})
-el('newBtn').onclick=function(){var c=lastGps||(map?map.getCenter():{lat:45.803,lng:15.168});openNew(c.lat,c.lng)}
 el('closeBtn').onclick=closeModal;el('cancelBtn').onclick=closeModal;
 el('gpsBtn').onclick=function(){gps(null,true)}
 el('orthoBtn').onclick=function(){orthoEnabled=!orthoEnabled;this.style.opacity=orthoEnabled?'1':'0.45';if(!orthoEnabled){if(orthoOverlay){try{map.removeLayer(orthoOverlay)}catch(e){}orthoOverlay=null;}if(orthoFallbackTiles&&map.hasLayer(orthoFallbackTiles)){try{map.removeLayer(orthoFallbackTiles)}catch(e){}}toast('Ortofoto izklopljen')}else{orthoErrorShown=false;toast('Ortofoto vklopljen');refreshOrtho()}}
