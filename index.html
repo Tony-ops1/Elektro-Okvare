@@ -795,16 +795,26 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
 <section id="weatherView" class="view">
   <div class="panel">
     <h2 style="margin-top:0">🌦️ Vreme</h2>
-    <div style="display:flex;justify-content:center">
-      <iframe
-        title="MSN vreme"
-        scrolling="no"
-        style="width:300px;height:305px;max-width:100%;border:0;border-radius:14px;overflow:hidden;background:#fff"
-        src="https://www.msn.com/widgets/fullpage/weatherWidgets/widget?experiences=WeatherCardWCFull&width=300&height=305&cm=sl-si&ocid=testwidget"
-        sandbox="allow-scripts allow-same-origin allow-popups">
-      </iframe>
+    <div id="weatherCard" style="max-width:520px;margin:0 auto;border:1px solid #d7e1e8;border-radius:16px;background:#fff;padding:16px;box-shadow:0 5px 18px rgba(11,58,99,.08)">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
+        <div>
+          <div id="weatherPlace" style="font-weight:900;font-size:18px;color:#122532">Novo mesto</div>
+          <div id="weatherText" style="margin-top:4px;color:#687a88">Nalagam vreme ...</div>
+        </div>
+        <div id="weatherIcon" style="font-size:44px;line-height:1">🌦️</div>
+      </div>
+      <div style="display:flex;align-items-end;gap:10px;margin-top:12px">
+        <div id="weatherTemp" style="font-size:48px;line-height:1;font-weight:900;color:#0b3a63">--°</div>
+        <div id="weatherFeels" style="padding-bottom:5px;color:#687a88">Občutek --°</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px">
+        <div style="background:#f2f6f9;border-radius:10px;padding:10px"><b>💨 Veter</b><div id="weatherWind" style="margin-top:3px">-- km/h</div></div>
+        <div style="background:#f2f6f9;border-radius:10px;padding:10px"><b>💧 Vlaga</b><div id="weatherHumidity" style="margin-top:3px">-- %</div></div>
+      </div>
+      <div id="weatherForecast" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px"></div>
+      <div id="weatherStatus" style="font-size:11px;color:#7b8b97;margin-top:10px;text-align:center"></div>
+      <a href="https://www.msn.com/weather" target="_blank" rel="noopener" style="display:block;text-align:center;margin-top:12px;padding:10px;border-radius:10px;background:#e9f0f5;color:#0b3a63;font-weight:900;text-decoration:none">Odpri MSN Weather ↗</a>
     </div>
-    <div style="text-align:center;margin-top:10px;font-size:12px;color:#687a88">Vir: MSN Weather</div>
   </div>
 </section>
 
@@ -1629,7 +1639,70 @@ function stats(){
   el('sAll').textContent=active.length
 }
 function renderAll(){renderMarkers();renderLists();stats()}
-function showView(id){document.querySelectorAll('.view').forEach(function(v){v.classList.toggle('active',v.id===id)});document.querySelectorAll('nav button[data-view]').forEach(function(b){b.classList.toggle('active',b.dataset.view===id)});if(id==='mapView'&&map)setTimeout(function(){map.invalidateSize()},100)}
+var weatherLoadedAt=0;
+function weatherInfo(code){
+  var c=Number(code);
+  if(c===0)return ['Jasno','☀️'];
+  if(c===1)return ['Pretežno jasno','🌤️'];
+  if(c===2)return ['Delno oblačno','⛅'];
+  if(c===3)return ['Oblačno','☁️'];
+  if(c===45||c===48)return ['Megla','🌫️'];
+  if(c===51||c===53||c===55||c===56||c===57)return ['Rosenje','🌦️'];
+  if(c===61||c===63||c===65||c===66||c===67)return ['Dež','🌧️'];
+  if(c===71||c===73||c===75||c===77)return ['Sneg','🌨️'];
+  if(c===80||c===81||c===82)return ['Plohe','🌧️'];
+  if(c===85||c===86)return ['Snežne plohe','🌨️'];
+  if(c===95||c===96||c===99)return ['Nevihta','⛈️'];
+  return ['Spremenljivo','🌦️'];
+}
+function weatherDayName(v){
+  var d=new Date(v+'T12:00:00');
+  return d.toLocaleDateString('sl-SI',{weekday:'short'}).replace('.','');
+}
+async function loadWeather(lat,lng,place){
+  var st=el('weatherStatus');
+  if(st)st.textContent='Osvežujem ...';
+  try{
+    var u='https://api.open-meteo.com/v1/forecast?latitude='+encodeURIComponent(lat)+
+      '&longitude='+encodeURIComponent(lng)+
+      '&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m'+
+      '&daily=weather_code,temperature_2m_max,temperature_2m_min'+
+      '&forecast_days=3&timezone=auto';
+    var r=await fetch(u);
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    var j=await r.json(),c=j.current||{},d=j.daily||{},wi=weatherInfo(c.weather_code);
+    el('weatherPlace').textContent=place||'Trenutna lokacija';
+    el('weatherText').textContent=wi[0];
+    el('weatherIcon').textContent=wi[1];
+    el('weatherTemp').textContent=Math.round(Number(c.temperature_2m))+'°';
+    el('weatherFeels').textContent='Občutek '+Math.round(Number(c.apparent_temperature))+'°';
+    el('weatherWind').textContent=Math.round(Number(c.wind_speed_10m))+' km/h';
+    el('weatherHumidity').textContent=Math.round(Number(c.relative_humidity_2m))+' %';
+    var out='';
+    var times=d.time||[],max=d.temperature_2m_max||[],min=d.temperature_2m_min||[],codes=d.weather_code||[];
+    for(var i=0;i<Math.min(3,times.length);i++){
+      var x=weatherInfo(codes[i]);
+      out+='<div style="background:#f7f9fb;border:1px solid #e1e8ed;border-radius:10px;padding:9px;text-align:center"><b>'+esc(weatherDayName(times[i]))+'</b><div style="font-size:24px;margin:3px 0">'+x[1]+'</div><div style="font-weight:800">'+Math.round(Number(max[i]))+'° / '+Math.round(Number(min[i]))+'°</div></div>';
+    }
+    el('weatherForecast').innerHTML=out;
+    weatherLoadedAt=Date.now();
+    if(st)st.textContent='Podatki: Open-Meteo • lokacija: '+(place||'GPS');
+  }catch(err){
+    console.error(err);
+    if(st)st.textContent='Vremena trenutno ni mogoče naložiti.';
+  }
+}
+function refreshWeather(force){
+  if(!force&&weatherLoadedAt&&Date.now()-weatherLoadedAt<10*60*1000)return;
+  var fallback=function(){loadWeather(45.8030,15.1689,'Novo mesto')};
+  if(!navigator.geolocation){fallback();return}
+  navigator.geolocation.getCurrentPosition(
+    function(p){loadWeather(p.coords.latitude,p.coords.longitude,'Moja lokacija')},
+    fallback,
+    {enableHighAccuracy:false,timeout:5000,maximumAge:10*60*1000}
+  );
+}
+function showView(id){document.querySelectorAll('.view').forEach(function(v){v.classList.toggle('active',v.id===id)});document.querySelectorAll('nav button[data-view]').forEach(function(b){b.classList.toggle('active',b.dataset.view===id)});if(id==='mapView'&&map)setTimeout(function(){map.invalidateSize()},100);if(id==='weatherView')refreshWeather(false)}
 function geocodeAddress(){
   var input=el('mapSearchAddress');
   var status=el('mapSearchStatus');
