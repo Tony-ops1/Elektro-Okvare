@@ -734,6 +734,7 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
     <button data-view="statsView">📊 STATISTIKA</button>
     <button data-view="archiveView" id="archiveNav" style="display:none">📦 ARHIV</button>
     <button data-view="usersView" id="usersNav" style="display:none">👥 UPORABNIKI</button>
+    <button data-view="weatherView" id="weatherNav">🌦️ VREME</button>
   </nav>
 </header>
 
@@ -788,6 +789,22 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
       <div class="field" style="justify-content:end"><button type="button" class="btn primary" id="userAddBtn">Dodaj uporabnika</button></div>
     </div>
     <div id="usersList"></div>
+  </div>
+</section>
+
+<section id="weatherView" class="view">
+  <div class="panel">
+    <h2 style="margin-top:0">🌦️ Vreme</h2>
+    <div style="display:flex;justify-content:center">
+      <iframe
+        title="MSN vreme"
+        scrolling="no"
+        style="width:300px;height:305px;max-width:100%;border:0;border-radius:14px;overflow:hidden;background:#fff"
+        src="https://www.msn.com/widgets/fullpage/weatherWidgets/widget?experiences=WeatherCardWCFull&width=300&height=305&cm=sl-si&ocid=testwidget"
+        sandbox="allow-scripts allow-same-origin allow-popups">
+      </iframe>
+    </div>
+    <div style="text-align:center;margin-top:10px;font-size:12px;color:#687a88">Vir: MSN Weather</div>
   </div>
 </section>
 
