@@ -804,7 +804,7 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
       <input type="hidden" id="lat">
       <input type="hidden" id="lng">
       <div class="field"><label>Datum in ura</label><input id="reportedAt" type="datetime-local" required></div>
-      <div class="field"><label>NAZIV SREDSTVA</label><select id="assetName"></select></div>
+      <div class="field"><label>NAZIV SREDSTVA</label><input id="assetName" list="assetNameList" placeholder="Vpiši ali izberi sredstvo ..." autocomplete="off"><datalist id="assetNameList"></datalist></div>
       <div class="field"><label>Vrsta okvare</label><select id="faultType"></select><input id="faultTypeCustom" placeholder="Vpiši drugo vrsto okvare ..."></div>
       <div class="field"><label>Napaka / opravilo</label><select id="faultDetail"></select><input id="faultDetailCustom" placeholder="Vpiši drugo napako / opravilo ..."></div>
       <div class="field"><label>Prioriteta</label><select id="priority"><option>kritično</option><option>visoka</option><option selected>normalna</option><option>nizka</option></select></div>
@@ -1114,7 +1114,7 @@ async function importLegacyIssues(){
   return {imported:imported,photos:photoCount,failed:failed};
 }
 function initTypes(){
-  el('assetName').innerHTML='<option value="">Izberi sredstvo ...</option>'+ASSETS.map(function(x){return '<option value="'+esc(x)+'">'+esc(x)+'</option>'}).join('');
+  el('assetNameList').innerHTML=ASSETS.map(function(x){return '<option value="'+esc(x)+'"></option>'}).join('');
   el('faultType').innerHTML='<option value="">Izberi ...</option>'+TYPES.map(function(x){return '<option>'+esc(x)+'</option>'}).join('');
   el('typeFilter').innerHTML='<option value="">Vse vrste</option>'+TYPES.map(function(x){return '<option>'+esc(x)+'</option>'}).join('');
   updateFaultDetails();
@@ -1658,9 +1658,6 @@ function openEdit(x){
   el('reportedAt').value=x.reportedAt||nowInput();
   el('lat').value=x.lat;
   el('lng').value=x.lng;
-  if(x.assetName&&ASSETS.indexOf(x.assetName)<0){
-    el('assetName').insertAdjacentHTML('beforeend','<option value="'+esc(x.assetName)+'">'+esc(x.assetName)+'</option>');
-  }
   el('assetName').value=x.assetName||'';
   if(TYPES.indexOf(x.type)>=0){
     el('faultType').value=x.type;
