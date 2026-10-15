@@ -1642,18 +1642,31 @@ function renderAll(){renderMarkers();renderLists();stats()}
 var weatherLoadedAt=0;
 function weatherInfo(code){
   var c=Number(code);
-  if(c===0)return ['Jasno','☀️'];
-  if(c===1)return ['Pretežno jasno','🌤️'];
-  if(c===2)return ['Delno oblačno','⛅'];
-  if(c===3)return ['Oblačno','☁️'];
-  if(c===45||c===48)return ['Megla','🌫️'];
-  if(c===51||c===53||c===55||c===56||c===57)return ['Rosenje','🌦️'];
-  if(c===61||c===63||c===65||c===66||c===67)return ['Dež','🌧️'];
-  if(c===71||c===73||c===75||c===77)return ['Sneg','🌨️'];
-  if(c===80||c===81||c===82)return ['Plohe','🌧️'];
-  if(c===85||c===86)return ['Snežne plohe','🌨️'];
-  if(c===95||c===96||c===99)return ['Nevihta','⛈️'];
-  return ['Spremenljivo','🌦️'];
+  if(c===0)return ['Jasno','sun'];
+  if(c===1||c===2)return ['Delno oblačno','partly'];
+  if(c===3)return ['Oblačno','cloud'];
+  if(c===45||c===48)return ['Megla','fog'];
+  if(c===51||c===53||c===55||c===56||c===57)return ['Rosenje','rain'];
+  if(c===61||c===63||c===65||c===66||c===67)return ['Dež','rain'];
+  if(c===71||c===73||c===75||c===77)return ['Sneg','snow'];
+  if(c===80||c===81||c===82)return ['Plohe','rain'];
+  if(c===85||c===86)return ['Snežne plohe','snow'];
+  if(c===95||c===96||c===99)return ['Nevihta','storm'];
+  return ['Spremenljivo','partly'];
+}
+function weatherSvg(code,size){
+  var kind=weatherInfo(code)[1],s=Number(size)||42;
+  var sun='<circle cx="22" cy="22" r="9" fill="#f7b928"/><g stroke="#f7b928" stroke-width="3" stroke-linecap="round"><path d="M22 5v6M22 33v6M5 22h6M33 22h6M10 10l4 4M30 30l4 4M34 10l-4 4M14 30l-4 4"/></g>';
+  var cloud='<path d="M17 44h28c7 0 12-5 12-11s-5-11-12-11h-1C42 14 36 10 29 10c-9 0-16 7-17 16-6 1-10 5-10 10 0 5 5 8 15 8z" fill="#dce7ef" stroke="#8aa0af" stroke-width="2"/>';
+  var body='';
+  if(kind==='sun')body='<g transform="translate(10 10)">'+sun+'</g>';
+  else if(kind==='partly')body='<g transform="translate(3 2) scale(.72)">'+sun+'</g><g transform="translate(5 11) scale(.88)">'+cloud+'</g>';
+  else if(kind==='cloud')body='<g transform="translate(3 8) scale(.92)">'+cloud+'</g>';
+  else if(kind==='fog')body='<g transform="translate(3 3) scale(.92)">'+cloud+'</g><g stroke="#8aa0af" stroke-width="3" stroke-linecap="round"><path d="M13 51h38M18 57h28"/></g>';
+  else if(kind==='rain')body='<g transform="translate(3 0) scale(.92)">'+cloud+'</g><g stroke="#2b8cff" stroke-width="4" stroke-linecap="round"><path d="M20 49l-3 7M33 49l-3 7M46 49l-3 7"/></g>';
+  else if(kind==='snow')body='<g transform="translate(3 0) scale(.92)">'+cloud+'</g><g fill="#2b8cff"><circle cx="18" cy="53" r="2.5"/><circle cx="32" cy="57" r="2.5"/><circle cx="46" cy="53" r="2.5"/></g>';
+  else if(kind==='storm')body='<g transform="translate(3 0) scale(.92)">'+cloud+'</g><path d="M34 43l-8 12h7l-3 8 12-14h-7l4-6z" fill="#f7b928"/>';
+  return '<svg width="'+s+'" height="'+s+'" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" style="display:inline-block;vertical-align:middle">'+body+'</svg>';
 }
 function weatherDayName(v){
   var d=new Date(v+'T12:00:00');
@@ -1673,7 +1686,7 @@ async function loadWeather(lat,lng,place){
     var j=await r.json(),c=j.current||{},d=j.daily||{},wi=weatherInfo(c.weather_code);
     el('weatherPlace').textContent=place||'Trenutna lokacija';
     el('weatherText').textContent=wi[0];
-    el('weatherIcon').textContent=wi[1];
+    el('weatherIcon').innerHTML=weatherSvg(c.weather_code,52);
     el('weatherTemp').textContent=Math.round(Number(c.temperature_2m))+'°';
     el('weatherFeels').textContent='Občutek '+Math.round(Number(c.apparent_temperature))+'°';
     el('weatherWind').textContent=Math.round(Number(c.wind_speed_10m))+' km/h';
@@ -1682,7 +1695,7 @@ async function loadWeather(lat,lng,place){
     var times=d.time||[],max=d.temperature_2m_max||[],min=d.temperature_2m_min||[],codes=d.weather_code||[];
     for(var i=0;i<Math.min(3,times.length);i++){
       var x=weatherInfo(codes[i]);
-      out+='<div style="background:#f7f9fb;border:1px solid #e1e8ed;border-radius:10px;padding:9px;text-align:center"><b>'+esc(weatherDayName(times[i]))+'</b><div style="font-size:24px;margin:3px 0">'+x[1]+'</div><div style="font-weight:800">'+Math.round(Number(max[i]))+'° / '+Math.round(Number(min[i]))+'°</div></div>';
+      out+='<div style="background:#f7f9fb;border:1px solid #e1e8ed;border-radius:10px;padding:9px;text-align:center"><b>'+esc(weatherDayName(times[i]))+'</b><div style="height:40px;margin:4px 0;display:flex;align-items:center;justify-content:center">'+weatherSvg(codes[i],38)+'</div><div style="font-weight:800">'+Math.round(Number(max[i]))+'° / '+Math.round(Number(min[i]))+'°</div></div>';
     }
     el('weatherForecast').innerHTML=out;
     weatherLoadedAt=Date.now();
