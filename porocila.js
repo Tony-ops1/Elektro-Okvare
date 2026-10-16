@@ -251,9 +251,11 @@ async function createOriginalReport(d){
   }
   var kind=d.kind,isNNO=kind==='NNO',isTP=kind==='TP',isSN=kind==='SN';
   var dy=isNNO?179:isTP?190:197;
-  var dateX=39,fromX=isSN?219:202,toX=isSN?300:279;
+  var dateX=39,fromX=isSN?219:207,toX=isSN?301:282;
+  // Prazne pike po »do« nadomesti čas odprave, brez prekrivanja napisov.
+  if(d.to)page.drawRectangle({x:isSN?300:280,y:pageHeight-dy-14,width:isSN?52:60,height:15,color:lib.rgb(1,1,1)});
   await place(dateX,dy,137,16,reportDate(d.date),10.6);
-  await place(fromX,dy,isSN?62:57,16,d.from,10.6);
+  await place(fromX,dy,isSN?62:50,16,d.from,10.6);
   await place(toX,dy,isSN?45:56,16,d.to,10.6);
   // Označena izvirna možnost nege ali odprave okvare.
   await place(d.reason==='nega'?(isSN?453:444):(isSN?496:486),dy-3,13,14,'✓',11,{bold:true});
@@ -281,8 +283,13 @@ async function createOriginalReport(d){
     await place(17,559,560,104,d.suggestions,10.5,{lineHeight:1.42});
     await place(17,696,560,106,d.measures,10.5,{lineHeight:1.42});
   }else{
-    await place(17,212,48,15,d.medium,10.5);
-    await place(25,226,40,14,d.voltage,10.3);
+    // Izvirni napis »DV/KB« ostane v celoti viden; izbira je pripisana ob njem.
+    await place(60,212,44,15,d.medium,10.5);
+    // Na originalnem obrazcu je že natisnjeno »20 kV«.
+    if(String(d.voltage||'20')!=='20'){
+      page.drawRectangle({x:26,y:pageHeight-241,width:14,height:14,color:lib.rgb(1,1,1)});
+      await place(27,228,28,13,d.voltage,10.2);
+    }
     await place(95,226,475,16,String(d.asset||'').replace(/^(DV|KB)\s+/i,''),10.5);
     await place(d.scope==='odsek'?60:7,243,12,15,'✓',10.3,{bold:true});
     if(d.scope==='odsek'){
@@ -290,7 +297,7 @@ async function createOriginalReport(d){
       await place(443,256,128,16,d.sectionTo,10.3);
     }
     await place(307,279,92,15,d.orderNo,10.3);
-    await place(17,328,560,146,d.description,10.5,{lineHeight:1.42});
+    await place(17,328,560,146,d.description||d.fault,10.5,{lineHeight:1.42});
     await place(17,513,560,130,d.suggestions,10.5,{lineHeight:1.42});
     await place(17,678,560,119,d.measures,10.5,{lineHeight:1.42});
   }
