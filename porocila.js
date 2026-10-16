@@ -324,7 +324,7 @@ function reportHtml(d){
     '.controls{display:flex;justify-content:center;align-items:center;gap:12px;padding:12px;background:#0b3a63;color:white;font:14px Arial}'+
     '.controls button{background:white;color:#0b3a63;border:0;border-radius:7px;padding:10px 18px;font-weight:bold}'+
     '@media print{html,body{background:#fff;margin:0;padding:0}.controls{display:none}.page{margin:0;box-shadow:none;width:595pt;height:842pt;page-break-after:avoid}}'+
-    '@media screen and (max-width:640px){.page{transform-origin:top left;transform:scale(calc((100vw - 8px) / 793));margin:0;}}'+
+    '@media screen and (max-width:640px){.page{zoom:calc((100vw - 8px) / 793px);margin:0 4px;box-shadow:none;}}'+
     '</style></head><body><div class="controls">Izvirni obrazec '+code+' <button type="button" onclick="window.print()">Tisk / Shrani kot PDF</button></div>'+
     '<article class="page">'+parts.join('')+'</article></body></html>';
 }
