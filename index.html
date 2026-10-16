@@ -718,7 +718,7 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
 
 <header>
   <div class="head">
-    <div><h1>⚡ Elektro okvare</h1><small>terensko beleženje • GitHub v3.7</small></div>
+    <div><h1>⚡ Elektro okvare</h1><small>terensko beleženje • GitHub v3.8</small></div>
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end">
       <span id="currentUserLabel" style="font-size:12px;font-weight:800"></span>
       <button id="logoutBtn" type="button" style="display:none;border:0;border-radius:8px;padding:6px 9px;background:#fff;color:#0b3a63;font-weight:800">Odjava</button>
@@ -840,7 +840,7 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
       <div class="field full"><label>Opombe</label><textarea id="notes"></textarea></div>
       <div class="field full"><label>Fotografije</label><input id="photoInput" type="file" accept="image/*" capture="environment" multiple><div class="photos" id="photos"></div></div>
     </div>
-    <div class="actions"><button type="button" class="btn danger" id="hardDeleteBtn" style="display:none;background:#b71c1c;color:#fff">🗑️ IZBRIŠI</button><button type="button" class="btn secondary" id="deleteBtn" style="display:none">📦 Arhiviraj</button><button type="button" class="btn secondary" id="cancelBtn">Prekliči</button><button class="btn primary" id="saveIssueBtn">Shrani</button></div>
+    <div class="actions"><button type="button" class="btn danger" id="hardDeleteBtn" style="display:none;background:#b71c1c;color:#fff">🗑️ IZBRIŠI</button><button type="button" class="btn secondary" id="deleteBtn" style="display:none">📦 Arhiviraj</button><button type="button" class="btn secondary" id="issueReportBtn" style="display:none">📄 Poročilo</button><button type="button" class="btn secondary" id="cancelBtn">Prekliči</button><button class="btn primary" id="saveIssueBtn">Shrani</button></div>
   </form>
 </div>
 </div>
@@ -1570,12 +1570,14 @@ function card(x,adminAction,showLocation){
   }else if(currentProfile&&currentProfile.role==='admin'&&adminAction==='restore'){
     action+='<button type="button" class="btn secondary quickRestore" data-action-id="'+esc(x.id)+'" style="margin-top:8px;padding:8px 10px;white-space:nowrap">↩ OBNOVI</button>';
   }
+  action+='<button type="button" class="btn secondary quickReport" data-report-id="'+esc(x.id)+'" style="margin-top:8px;padding:8px 10px;white-space:nowrap">📄 POROČILO</button>';
   var mainTitle=showLocation&&x.assetName?esc(x.assetName):(esc(x.type||'Napaka')+(x.faultDetail?' • '+esc(x.faultDetail):''));
   var subTitle=showLocation&&x.assetName?'<div class="desc" style="font-weight:800;margin-top:5px">'+esc(x.type||'Napaka')+(x.faultDetail?' • '+esc(x.faultDetail):'')+'</div>':'';
   return '<div class="card" data-id="'+x.id+'"><div class="bar" style="background:'+color(x)+'"></div><div class="body"><div class="title">'+mainTitle+'</div>'+subTitle+'<div class="meta">'+(x.locationAddress?'<span>📍 '+esc(x.locationAddress)+'</span>':'')+'<span>🕒 '+esc(dt)+'</span><span>🔧 '+esc(x.status)+'</span></div>'+(x.description?'<div class="desc">'+esc(x.description)+'</div>':'')+'</div><div class="side" style="flex-direction:column;align-items:flex-end"><span class="pill '+esc(x.priority)+'">'+esc(x.priority)+'</span>'+action+'</div></div>'
 }
 function bindCards(box){
   box.querySelectorAll('.card').forEach(function(c){c.onclick=function(){window.editIssue(c.dataset.id)}});
+  box.querySelectorAll('.quickReport').forEach(function(b){b.onclick=function(e){e.stopPropagation();var x=issues.find(function(i){return i.id===b.dataset.reportId});if(x&&window.eoReportOpen)window.eoReportOpen(x);else toast('Poročila se še nalagajo')}});
   box.querySelectorAll('.showLocationBtn').forEach(function(b){b.onclick=function(e){
     e.stopPropagation();
     var x=issues.find(function(i){return i.id===b.dataset.actionId});
@@ -1758,6 +1760,7 @@ function resetForm(){
   photos=[];renderPhotos();
   el('deleteBtn').style.display='none';
   el('hardDeleteBtn').style.display='none';
+  el('issueReportBtn').style.display='none';
   if(currentProfile)el('reportedBy').value=currentProfile.display_name||currentProfile.username||'';
 }
 function openNew(lat,lng){
@@ -1810,6 +1813,7 @@ function openEdit(x){
     ab.textContent=x.archivedAt?'↩ Obnovi iz arhiva':'📦 Arhiviraj';
   }else{ab.style.display='none'}
   db.style.display=isAdmin?'inline-block':'none';
+  el('issueReportBtn').style.display='inline-block';
   el('modal').classList.add('open');
 }
 function closeModal(){el('modal').classList.remove('open')}
@@ -1951,6 +1955,7 @@ el('logoutBtn').onclick=async function(){if(realtimeChannel){try{await sb.remove
 el('userAddBtn').onclick=function(){addUserNow().catch(function(e){toast(e.message)})};
 document.querySelectorAll('nav button[data-view]').forEach(function(b){b.onclick=function(){showView(b.dataset.view);if(b.dataset.view==='usersView')loadUsers().catch(function(e){toast(e.message)})}})
 el('closeBtn').onclick=closeModal;el('cancelBtn').onclick=closeModal;
+el('issueReportBtn').onclick=function(){var id=el('issueId').value,x=issues.find(function(i){return i.id===id});if(x&&window.eoReportOpen)window.eoReportOpen(x);else toast('Najprej shrani okvaro')};
 el('gpsBtn').onclick=function(){gps(null,true)}
 el('orthoBtn').onclick=function(){orthoEnabled=!orthoEnabled;this.style.opacity=orthoEnabled?'1':'0.45';if(!orthoEnabled){if(orthoOverlay){try{map.removeLayer(orthoOverlay)}catch(e){}orthoOverlay=null;}if(orthoFallbackTiles&&map.hasLayer(orthoFallbackTiles)){try{map.removeLayer(orthoFallbackTiles)}catch(e){}}toast('Ortofoto izklopljen')}else{orthoErrorShown=false;toast('Ortofoto vklopljen');refreshOrtho()}}
 el('netBtn').onclick=function(){var p=el('netPanel'),show=p.style.display==='none';p.style.display=show?'flex':'none';if(show)netCaps(false)};
@@ -2080,5 +2085,6 @@ window.addEventListener('online',netState);window.addEventListener('offline',net
 initTypes();initMap();renderAll();netState();setTimeout(function(){gps(null,true)},500);startAuth().catch(function(e){console.error(e);showAuth()});
 })();
 </script>
+<script src="porocila.js?v=1"></script>
 </body>
 </html>
