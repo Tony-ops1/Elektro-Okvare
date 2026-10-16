@@ -240,7 +240,7 @@ async function createOriginalReport(d){
       });
       if(line)lines.push(line);
     });
-    var lineHeight=(size||10.5)*(opts.lineHeight||1.28),maxLines=Math.floor(height/lineHeight);
+    var lineHeight=(size||10.5)*(opts.lineHeight||1.28),maxLines=Math.max(1,Math.floor(height/lineHeight));
     if(lines.length>maxLines)throw new Error('Besedilo je predolgo za eno stran originalnega obrazca. Skrajšaj opis, predloge ali ukrepe in poskusi znova.');
     lines.forEach(function(line,i){ctx.fillText(line,0,1+i*lineHeight,maxWidth)});
     var png=await doc.embedPng(canvas.toDataURL('image/png'));
