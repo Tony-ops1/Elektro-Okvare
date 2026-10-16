@@ -241,10 +241,7 @@ async function createOriginalReport(d){
       if(line)lines.push(line);
     });
     var lineHeight=(size||10.5)*(opts.lineHeight||1.28),maxLines=Math.floor(height/lineHeight);
-    if(lines.length>maxLines){lines=lines.slice(0,maxLines);if(lines.length&&opts.truncate!==false){
-      var tail=lines.length-1;while(lines[tail].length&&ctx.measureText(lines[tail]+'…').width>maxWidth)lines[tail]=lines[tail].slice(0,-1);
-      lines[tail]+='…';
-    }}
+    if(lines.length>maxLines)throw new Error('Besedilo je predolgo za eno stran originalnega obrazca. Skrajšaj opis, predloge ali ukrepe in poskusi znova.');
     lines.forEach(function(line,i){ctx.fillText(line,0,1+i*lineHeight,maxWidth)});
     var png=await doc.embedPng(canvas.toDataURL('image/png'));
     page.drawImage(png,{x:x,y:pageHeight-top-height,width:width,height:height});
