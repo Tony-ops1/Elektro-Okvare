@@ -34,15 +34,41 @@ function faultMapsUrl(x){
   return 'https://www.google.com/maps/search/?api=1&query='+
     encodeURIComponent(coords.lat.toFixed(6)+','+coords.lng.toFixed(6));
 }
-function withFaultLocation(description,location){
-  var body=val(description).trim();
-  if(!location)return body;
-  var line='Lokacija okvare: '+location;
-  if(/^Lokacija okvare\s*:/i.test(body)){
-    var newline=body.search(/\r?\n/);
-    return line+(newline>=0?'\n'+body.slice(newline).trimStart():'');
+// Slovenski ravninski koordinatni sistem D96/TM (EPSG:3794).
+// Prvi rezultat je e (vzhod), drugi n (sever), oboje v metrih.
+// Uporabljena je ista preslikava kot pri GURS zemljevidu v aplikaciji.
+function gpsToD96(lon,lat){
+  var a=6378137,f=1/298.257222101,k0=0.9999,E0=500000,N0=-5000000,lon0=15*Math.PI/180;
+  var n=f/(2-f),A=a/(1+n)*(1+n*n/4+n*n*n*n/64);
+  var alpha=[n/2-2*n*n/3+5*n*n*n/16,13*n*n/48-3*n*n*n/5,61*n*n*n/240];
+  var e=Math.sqrt(2*f-f*f),ph=lat*Math.PI/180,la=lon*Math.PI/180-lon0;
+  var t=Math.sinh(Math.atanh(Math.sin(ph))-e*Math.atanh(e*Math.sin(ph)));
+  var xi=Math.atan2(t,Math.cos(la)),eta=Math.atanh(Math.sin(la)/Math.sqrt(1+t*t));
+  var xs=xi,es=eta;
+  for(var j=1;j<=3;j++){
+    xs+=alpha[j-1]*Math.sin(2*j*xi)*Math.cosh(2*j*eta);
+    es+=alpha[j-1]*Math.cos(2*j*xi)*Math.sinh(2*j*eta);
   }
-  return line+(body?'\n'+body:'');
+  return {e:E0+k0*A*es,n:N0+k0*A*xs};
+}
+function faultXY(x){
+  var coords=issueCoords(x);
+  if(!coords)return '';
+  var xy=gpsToD96(coords.lng,coords.lat);
+  function m(v){return v.toFixed(2).replace('.',',')}
+  // Uveljavljena oznaka X/Y: X = severna, Y = vzhodna;
+  // uradni D96/TM oznaki koordinat sta n in e.
+  return 'D96/TM: X (n) = '+m(xy.n)+' m; Y (e) = '+m(xy.e)+' m';
+}
+function withFaultLocation(description,location,xyText){
+  var body=val(description).trim(),locationText=val(location).trim();
+  if(!locationText)return body;
+  var lines=body.split(/\r?\n/);
+  if(/^Lokacija okvare\s*:/i.test(lines[0]||''))lines.shift();
+  if(/^D96(?:-17)?\/TM\s*:/i.test(lines[0]||''))lines.shift();
+  var header=['Lokacija okvare: '+locationText];
+  if(xyText)header.push(xyText);
+  return header.concat(lines.join('\n').trim()?lines.join('\n').trim():[]).join('\n');
 }
 
 function defaults(x){
@@ -61,7 +87,7 @@ function defaults(x){
     location:val(x.locationAddress),gpsLat:issueCoords(x)?issueCoords(x).lat:'',gpsLng:issueCoords(x)?issueCoords(x).lng:'',outlet:'',scope:'cel',sectionFrom:'',sectionTo:'',
     medium: /^KB[\s\/-]/i.test(name)?'KB':'DV',voltage:'20',orderNo:'',
     fault:faultFromIssue,cause:causeFromDescription,
-    description:withFaultLocation(x.description,faultLocation(x)),suggestions:faultFromIssue,measures:'',
+    description:withFaultLocation(x.description,faultLocation(x),faultXY(x)),suggestions:faultFromIssue,measures:'',
     responsible:val(x.assignedTo)||val(x.reportedBy),
     notes:val(x.notes)
   };
@@ -170,7 +196,7 @@ function open(x){
   var coords=issueCoords(x);
   data.gpsLat=coords?coords.lat:'';
   data.gpsLng=coords?coords.lng:'';
-  data.description=withFaultLocation(data.description,faultLocation(x));
+  data.description=withFaultLocation(data.description,faultLocation(x),faultXY(x));
   document.getElementById('eor-issue').textContent='Okvara: '+(x.assetName||x.type||'')+' • '+(x.faultDetail||'');
   document.getElementById('eor-kind').value=data.kind;
   updateFields();
