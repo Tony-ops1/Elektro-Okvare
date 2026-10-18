@@ -60,15 +60,28 @@ function faultXY(x){
   // uradni D96/TM oznaki koordinat sta n in e.
   return 'D96/TM: X (n) = '+m(xy.n)+' m; Y (e) = '+m(xy.e)+' m';
 }
-function withFaultLocation(description,location,xyText){
-  var body=val(description).trim(),locationText=val(location).trim();
-  if(!locationText)return body;
-  var lines=body.split(/\r?\n/);
-  if(/^Lokacija okvare\s*:/i.test(lines[0]||''))lines.shift();
+// V starejših osnutkih je lokacija na začetku kratkega opisa.
+// Odstranimo le ti dve samodejno ustvarjeni vrstici, ostalo besedilo ohranimo.
+function descriptionWithoutFaultLocation(description){
+  var text=val(description),lines=text.split(/\r?\n/);
+  if(!/^Lokacija okvare\s*:/i.test(lines[0]||''))return text;
+  lines.shift();
   if(/^D96(?:-17)?\/TM\s*:/i.test(lines[0]||''))lines.shift();
-  var header=['Lokacija okvare: '+locationText];
-  if(xyText)header.push(xyText);
-  return header.concat(lines.join('\n').trim()?lines.join('\n').trim():[]).join('\n');
+  return lines.join('\n').trim();
+}
+// Tretja vrstica rubrike PREDLOGI: lokacija; četrta: slovenski X/Y.
+// Prvi dve vrstici uporabnikovega predloga in drugo besedilo ostanejo ohranjeni.
+function locationInThirdProposalLine(suggestions,location,xyText){
+  var text=val(suggestions);
+  if(!location)return text;
+  var lines=text.split(/\r?\n/).filter(function(line){
+    return !/^Lokacija okvare\s*:/i.test(line)&&!/^D96(?:-17)?\/TM\s*:/i.test(line);
+  });
+  while(lines.length>2&&lines[lines.length-1]==='')lines.pop();
+  var first=lines.length?lines[0]:'',second=lines.length>1?lines[1]:'';
+  var result=[first,second,'Lokacija okvare: '+location];
+  if(xyText)result.push(xyText);
+  return result.concat(lines.slice(2)).join('\n');
 }
 
 function defaults(x){
@@ -87,7 +100,7 @@ function defaults(x){
     location:val(x.locationAddress),gpsLat:issueCoords(x)?issueCoords(x).lat:'',gpsLng:issueCoords(x)?issueCoords(x).lng:'',outlet:'',scope:'cel',sectionFrom:'',sectionTo:'',
     medium: /^KB[\s\/-]/i.test(name)?'KB':'DV',voltage:'20',orderNo:'',
     fault:faultFromIssue,cause:causeFromDescription,
-    description:withFaultLocation(x.description,faultLocation(x),faultXY(x)),suggestions:faultFromIssue,measures:'',
+    description:val(x.description),suggestions:locationInThirdProposalLine(faultFromIssue,faultLocation(x),faultXY(x)),measures:'',
     responsible:val(x.assignedTo)||val(x.reportedBy),
     notes:val(x.notes)
   };
@@ -120,8 +133,8 @@ function updateFields(){
   var mapUrl=issue?faultMapsUrl(issue):'';
   var tail=input('Delovni nalog za varno delo št. (če obstaja)','orderNo')+
       textarea('Kratek opis vzroka okvare in posledic','description')+
-      (mapUrl?'<div class="eor-full" style="margin-top:-5px;font-size:13px"><a href="'+E(mapUrl)+'" target="_blank" rel="noopener noreferrer" style="color:#0b3a63;font-weight:800">📍 Odpri točno lokacijo v Google Maps ↗</a></div>':'')+
       textarea('Predlogi','suggestions')+
+      (mapUrl?'<div class="eor-full" style="margin-top:-5px;font-size:13px"><a href="'+E(mapUrl)+'" target="_blank" rel="noopener noreferrer" style="color:#0b3a63;font-weight:800">📍 Odpri točno lokacijo v Google Maps ↗</a></div>':'')+
       textarea('Izvedeni ukrepi','measures')+
       input('Odgovorna oseba / podpis','responsible');
   document.getElementById('eor-fields').innerHTML=common+subtype+tail;
@@ -196,7 +209,8 @@ function open(x){
   var coords=issueCoords(x);
   data.gpsLat=coords?coords.lat:'';
   data.gpsLng=coords?coords.lng:'';
-  data.description=withFaultLocation(data.description,faultLocation(x),faultXY(x));
+  data.description=descriptionWithoutFaultLocation(data.description);
+  data.suggestions=locationInThirdProposalLine(data.suggestions,faultLocation(x),faultXY(x));
   document.getElementById('eor-issue').textContent='Okvara: '+(x.assetName||x.type||'')+' • '+(x.faultDetail||'');
   document.getElementById('eor-kind').value=data.kind;
   updateFields();
@@ -356,8 +370,8 @@ async function createOriginalReport(d){
     await place(51,342,524,16,d.cause,10.4);
     await place(307,365,90,15,d.orderNo,10.2);
     await place(17,410,560,125,d.description,10.5,{lineHeight:1.42});
-    addMapLink(410);
     await place(17,567,560,105,d.suggestions,10.5,{lineHeight:1.42});
+    addMapLink(567+2*10.5*1.42);
     await place(17,708,560,93,d.measures,10.5,{lineHeight:1.42});
   }else if(isTP){
     await place(178,234,397,30,String(d.tp||'').replace(/^TP\s+/i,'')+(d.location?' – '+d.location:''),10.5);
@@ -365,8 +379,8 @@ async function createOriginalReport(d){
     await place(93,328,482,15,d.fault,10.5);
     await place(93,352,482,15,d.cause,10.5);
     await place(17,399,560,120,d.description,10.5,{lineHeight:1.42});
-    addMapLink(399);
     await place(17,559,560,104,d.suggestions,10.5,{lineHeight:1.42});
+    addMapLink(559+2*10.5*1.42);
     await place(17,696,560,106,d.measures,10.5,{lineHeight:1.42});
   }else{
     // Izvirni napis »DV/KB« ostane v celoti viden; izbira je pripisana ob njem.
@@ -384,8 +398,8 @@ async function createOriginalReport(d){
     }
     await place(307,279,92,15,d.orderNo,10.3);
     await place(17,328,560,146,d.description||d.fault,10.5,{lineHeight:1.42});
-    addMapLink(328);
     await place(17,513,560,130,d.suggestions,10.5,{lineHeight:1.42});
+    addMapLink(513+2*10.5*1.42);
     await place(17,678,560,119,d.measures,10.5,{lineHeight:1.42});
   }
   await place(193,813,199,15,reportDate(d.date),10.5);
