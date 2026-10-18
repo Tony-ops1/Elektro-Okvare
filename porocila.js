@@ -24,42 +24,25 @@ function issueCoords(x){
   return isFinite(lat)&&isFinite(lng)&&Math.abs(lat)<=90&&Math.abs(lng)<=180&&!(lat===0&&lng===0)?{lat:lat,lng:lng}:null;
 }
 function faultLocation(x){
-  var address=val(x.locationAddress).trim();
-  if(address)return address;
   var coords=issueCoords(x);
-  return coords?'GPS: '+coords.lat.toFixed(5)+', '+coords.lng.toFixed(5):'';
+  if(coords)return coords.lat.toFixed(6)+', '+coords.lng.toFixed(6);
+  return val(x.locationAddress).trim();
+}
+function faultMapsUrl(x){
+  var coords=issueCoords(x);
+  if(!coords)return '';
+  return 'https://www.google.com/maps/search/?api=1&query='+
+    encodeURIComponent(coords.lat.toFixed(6)+','+coords.lng.toFixed(6));
 }
 function withFaultLocation(description,location){
   var body=val(description).trim();
-  if(!location||/^Lokacija okvare\s*:/i.test(body))return body;
-  return 'Lokacija okvare: '+location+(body?'\n'+body:'');
-}
-// Če je shranjen le GPS, poskusimo najti najbližji naslov oz. kraj.
-// Spremenimo le predizpolnjeno lokacijo; ročnega vnosa ne prepišemo.
-function resolveFaultLocation(x){
-  var coords=issueCoords(x);
-  if(!coords||val(x.locationAddress).trim())return;
-  var firstLine='Lokacija okvare: '+faultLocation(x);
-  fetch('https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=16&addressdetails=1&lat='+
-    encodeURIComponent(coords.lat)+'&lon='+encodeURIComponent(coords.lng),
-    {headers:{'Accept':'application/json'}})
-  .then(function(r){if(!r.ok)throw new Error('Naslova ni bilo mogoče pridobiti');return r.json()})
-  .then(function(item){
-    var a=item&&item.address||{};
-    var street=[a.road||a.pedestrian||a.path||'',a.house_number||''].filter(Boolean).join(' ');
-    var place=a.hamlet||a.village||a.town||a.city||a.suburb||a.municipality||'';
-    var found=[street,place].filter(function(v,i,arr){return v&&arr.indexOf(v)===i}).join(', ');
-    if(!found&&item&&item.display_name)found=String(item.display_name).split(',').slice(0,2).join(',').trim();
-    if(!found||!issue||String(issue.id)!==String(x.id)||!data)return;
-    var field=document.querySelector('#eor-fields [data-eor="description"]');
-    if(!field)return;
-    var lines=val(field.value).split('\n');
-    if(lines[0]!==firstLine)return;
-    lines[0]='Lokacija okvare: '+found;
-    field.value=lines.join('\n');
-    data.description=field.value;
-  })
-  .catch(function(){/* GPS ostane v poročilu, če ni naslova. */});
+  if(!location)return body;
+  var line='Lokacija okvare: '+location;
+  if(/^Lokacija okvare\s*:/i.test(body)){
+    var newline=body.search(/\r?\n/);
+    return line+(newline>=0?'\n'+body.slice(newline).trimStart():'');
+  }
+  return line+(body?'\n'+body:'');
 }
 
 function defaults(x){
@@ -75,7 +58,7 @@ function defaults(x){
     kind:kind,date:datePart(x.reportedAt)||datePart(new Date()),from:timePart(x.reportedAt),
     to:timePart(x.resolvedAt),reason:'odprava',area:'Novo mesto',group:'RV Novo mesto',
     tp:kind==='SN'?'':tpName,asset:name,assetCode:val(x.assetCode),
-    location:val(x.locationAddress),outlet:'',scope:'cel',sectionFrom:'',sectionTo:'',
+    location:val(x.locationAddress),gpsLat:issueCoords(x)?issueCoords(x).lat:'',gpsLng:issueCoords(x)?issueCoords(x).lng:'',outlet:'',scope:'cel',sectionFrom:'',sectionTo:'',
     medium: /^KB[\s\/-]/i.test(name)?'KB':'DV',voltage:'20',orderNo:'',
     fault:faultFromIssue,cause:causeFromDescription,
     description:withFaultLocation(x.description,faultLocation(x)),suggestions:faultFromIssue,measures:'',
@@ -108,8 +91,10 @@ function updateFields(){
       select('Obseg','scope',[['cel','Cel vod'],['odsek','Odsek voda']])+
       input('Na odseku od','sectionFrom')+input('Na odseku do','sectionTo');
   }
+  var mapUrl=issue?faultMapsUrl(issue):'';
   var tail=input('Delovni nalog za varno delo št. (če obstaja)','orderNo')+
       textarea('Kratek opis vzroka okvare in posledic','description')+
+      (mapUrl?'<div class="eor-full" style="margin-top:-5px;font-size:13px"><a href="'+E(mapUrl)+'" target="_blank" rel="noopener noreferrer" style="color:#0b3a63;font-weight:800">📍 Odpri točno lokacijo v Google Maps ↗</a></div>':'')+
       textarea('Predlogi','suggestions')+
       textarea('Izvedeni ukrepi','measures')+
       input('Odgovorna oseba / podpis','responsible');
@@ -181,13 +166,15 @@ function open(x){
     }
   }catch(e){}
   if(!KINDS[data.kind])data.kind=guessKind(x);
-  // Stare osnutke dopolnimo brez izgube predhodnega opisa.
+  // Tudi stari osnutki prikažejo koordinate trenutne shranjene okvare.
+  var coords=issueCoords(x);
+  data.gpsLat=coords?coords.lat:'';
+  data.gpsLng=coords?coords.lng:'';
   data.description=withFaultLocation(data.description,faultLocation(x));
   document.getElementById('eor-issue').textContent='Okvara: '+(x.assetName||x.type||'')+' • '+(x.faultDetail||'');
   document.getElementById('eor-kind').value=data.kind;
   updateFields();
   root.classList.add('eor-open');
-  resolveFaultLocation(x);
 }
 function close(){if(root){root.classList.remove('eor-open')}issue=null;data=null}
 function dot(v){return '<span class="eopr-dot">'+(E(v)||'&nbsp;')+'</span>'}
@@ -306,6 +293,20 @@ async function createOriginalReport(d){
     var png=await doc.embedPng(canvas.toDataURL('image/png'));
     page.drawImage(png,{x:x,y:pageHeight-top-height,width:width,height:height});
   }
+  // Klikljiv Google Maps naslov je dodatna PDF povezava, podlaga ostane originalni PDF.
+  function addMapLink(top){
+    var url=faultMapsUrl({lat:d.gpsLat,lng:d.gpsLng});
+    if(!url)return;
+    var x=389,y=pageHeight-top-11,label='Odpri v Google Maps';
+    page.drawText(label,{x:x,y:y,size:9.5,color:lib.rgb(0.05,0.26,0.70)});
+    page.drawLine({start:{x:x,y:y-1.5},end:{x:x+91,y:y-1.5},thickness:0.5,color:lib.rgb(0.05,0.26,0.70)});
+    var action=doc.context.obj({Type:'Action',S:'URI',URI:lib.PDFString.of(url)});
+    var annotation=doc.context.obj({
+      Type:'Annot',Subtype:'Link',Rect:[x,y-4,x+100,y+12],
+      Border:[0,0,0],A:action
+    });
+    page.node.addAnnot(doc.context.register(annotation));
+  }
   var kind=d.kind,isNNO=kind==='NNO',isTP=kind==='TP',isSN=kind==='SN';
   var dy=isNNO?179:isTP?190:197;
   var dateX=39,fromX=isSN?219:207,toX=isSN?301:282;
@@ -329,6 +330,7 @@ async function createOriginalReport(d){
     await place(51,342,524,16,d.cause,10.4);
     await place(307,365,90,15,d.orderNo,10.2);
     await place(17,410,560,125,d.description,10.5,{lineHeight:1.42});
+    addMapLink(410);
     await place(17,567,560,105,d.suggestions,10.5,{lineHeight:1.42});
     await place(17,708,560,93,d.measures,10.5,{lineHeight:1.42});
   }else if(isTP){
@@ -337,6 +339,7 @@ async function createOriginalReport(d){
     await place(93,328,482,15,d.fault,10.5);
     await place(93,352,482,15,d.cause,10.5);
     await place(17,399,560,120,d.description,10.5,{lineHeight:1.42});
+    addMapLink(399);
     await place(17,559,560,104,d.suggestions,10.5,{lineHeight:1.42});
     await place(17,696,560,106,d.measures,10.5,{lineHeight:1.42});
   }else{
@@ -355,6 +358,7 @@ async function createOriginalReport(d){
     }
     await place(307,279,92,15,d.orderNo,10.3);
     await place(17,328,560,146,d.description||d.fault,10.5,{lineHeight:1.42});
+    addMapLink(328);
     await place(17,513,560,130,d.suggestions,10.5,{lineHeight:1.42});
     await place(17,678,560,119,d.measures,10.5,{lineHeight:1.42});
   }
