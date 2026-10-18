@@ -20,14 +20,20 @@ function guessKind(x){
 function defaults(x){
   var name=val(x.assetName),kind=guessKind(x);
   var tpName=name.replace(/^NNO\s+/i,'');
+  // Vzrok ni ločeno shranjen v okvari. Kratek opis lahko služi kot predizpolnjen
+  // predlog vzroka; daljši opis ostane v rubriki za opis in posledice.
+  var savedDescription=val(x.description).trim();
+  var causeFromDescription=(savedDescription.length<=85&&!/[\r\n]/.test(savedDescription))?savedDescription:'';
+  // Predlogi se predizpolnijo z izbrano napako/opravilo (npr. Posek).
+  var faultFromIssue=val(x.faultDetail).trim()||val(x.type).trim();
   return {
     kind:kind,date:datePart(x.reportedAt)||datePart(new Date()),from:timePart(x.reportedAt),
     to:timePart(x.resolvedAt),reason:'odprava',area:'Novo mesto',group:'RV Novo mesto',
     tp:kind==='SN'?'':tpName,asset:name,assetCode:val(x.assetCode),
     location:val(x.locationAddress),outlet:'',scope:'cel',sectionFrom:'',sectionTo:'',
     medium: /^KB[\s\/-]/i.test(name)?'KB':'DV',voltage:'20',orderNo:'',
-    fault:val(x.faultDetail)||val(x.type),cause:'',
-    description:val(x.description),suggestions:'',measures:'',
+    fault:faultFromIssue,cause:causeFromDescription,
+    description:val(x.description),suggestions:faultFromIssue,measures:'',
     responsible:val(x.assignedTo)||val(x.reportedBy),
     notes:val(x.notes)
   };
@@ -121,7 +127,13 @@ function open(x){
   issue=x;data=defaults(x);
   try{
     var saved=JSON.parse(localStorage.getItem(STORE+x.id)||'null');
-    if(saved&&typeof saved==='object'){Object.keys(data).forEach(function(k){if(Object.prototype.hasOwnProperty.call(saved,k))data[k]=saved[k]})}
+    if(saved&&typeof saved==='object'){
+      Object.keys(data).forEach(function(k){if(Object.prototype.hasOwnProperty.call(saved,k))data[k]=saved[k]});
+      // Stari prazni osnutki naj prav tako prejmejo novo predizpolnitev.
+      var proposed=defaults(x);
+      if(!val(data.cause).trim())data.cause=proposed.cause;
+      if(!val(data.suggestions).trim())data.suggestions=proposed.suggestions;
+    }
   }catch(e){}
   if(!KINDS[data.kind])data.kind=guessKind(x);
   document.getElementById('eor-issue').textContent='Okvara: '+(x.assetName||x.type||'')+' • '+(x.faultDetail||'');
