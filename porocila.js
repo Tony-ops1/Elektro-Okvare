@@ -17,6 +17,51 @@ function guessKind(x){
   if(/\btp\b/i.test(type)||/^tp(\s|$)/i.test(name)||/transformatorsk/i.test(type))return 'TP';
   return 'NNO';
 }
+
+function issueCoords(x){
+  if(x.lat===null||x.lat===undefined||x.lat===''||x.lng===null||x.lng===undefined||x.lng==='')return null;
+  var lat=Number(x.lat),lng=Number(x.lng);
+  return isFinite(lat)&&isFinite(lng)&&Math.abs(lat)<=90&&Math.abs(lng)<=180&&!(lat===0&&lng===0)?{lat:lat,lng:lng}:null;
+}
+function faultLocation(x){
+  var address=val(x.locationAddress).trim();
+  if(address)return address;
+  var coords=issueCoords(x);
+  return coords?'GPS: '+coords.lat.toFixed(5)+', '+coords.lng.toFixed(5):'';
+}
+function withFaultLocation(description,location){
+  var body=val(description).trim();
+  if(!location||/^Lokacija okvare\s*:/i.test(body))return body;
+  return 'Lokacija okvare: '+location+(body?'\n'+body:'');
+}
+// Če je shranjen le GPS, poskusimo najti najbližji naslov oz. kraj.
+// Spremenimo le predizpolnjeno lokacijo; ročnega vnosa ne prepišemo.
+function resolveFaultLocation(x){
+  var coords=issueCoords(x);
+  if(!coords||val(x.locationAddress).trim())return;
+  var firstLine='Lokacija okvare: '+faultLocation(x);
+  fetch('https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=16&addressdetails=1&lat='+
+    encodeURIComponent(coords.lat)+'&lon='+encodeURIComponent(coords.lng),
+    {headers:{'Accept':'application/json'}})
+  .then(function(r){if(!r.ok)throw new Error('Naslova ni bilo mogoče pridobiti');return r.json()})
+  .then(function(item){
+    var a=item&&item.address||{};
+    var street=[a.road||a.pedestrian||a.path||'',a.house_number||''].filter(Boolean).join(' ');
+    var place=a.hamlet||a.village||a.town||a.city||a.suburb||a.municipality||'';
+    var found=[street,place].filter(function(v,i,arr){return v&&arr.indexOf(v)===i}).join(', ');
+    if(!found&&item&&item.display_name)found=String(item.display_name).split(',').slice(0,2).join(',').trim();
+    if(!found||!issue||String(issue.id)!==String(x.id)||!data)return;
+    var field=document.querySelector('#eor-fields [data-eor="description"]');
+    if(!field)return;
+    var lines=val(field.value).split('\n');
+    if(lines[0]!==firstLine)return;
+    lines[0]='Lokacija okvare: '+found;
+    field.value=lines.join('\n');
+    data.description=field.value;
+  })
+  .catch(function(){/* GPS ostane v poročilu, če ni naslova. */});
+}
+
 function defaults(x){
   var name=val(x.assetName),kind=guessKind(x);
   var tpName=name.replace(/^NNO\s+/i,'');
@@ -33,7 +78,7 @@ function defaults(x){
     location:val(x.locationAddress),outlet:'',scope:'cel',sectionFrom:'',sectionTo:'',
     medium: /^KB[\s\/-]/i.test(name)?'KB':'DV',voltage:'20',orderNo:'',
     fault:faultFromIssue,cause:causeFromDescription,
-    description:val(x.description),suggestions:faultFromIssue,measures:'',
+    description:withFaultLocation(x.description,faultLocation(x)),suggestions:faultFromIssue,measures:'',
     responsible:val(x.assignedTo)||val(x.reportedBy),
     notes:val(x.notes)
   };
@@ -136,10 +181,13 @@ function open(x){
     }
   }catch(e){}
   if(!KINDS[data.kind])data.kind=guessKind(x);
+  // Stare osnutke dopolnimo brez izgube predhodnega opisa.
+  data.description=withFaultLocation(data.description,faultLocation(x));
   document.getElementById('eor-issue').textContent='Okvara: '+(x.assetName||x.type||'')+' • '+(x.faultDetail||'');
   document.getElementById('eor-kind').value=data.kind;
   updateFields();
   root.classList.add('eor-open');
+  resolveFaultLocation(x);
 }
 function close(){if(root){root.classList.remove('eor-open')}issue=null;data=null}
 function dot(v){return '<span class="eopr-dot">'+(E(v)||'&nbsp;')+'</span>'}
