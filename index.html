@@ -753,10 +753,8 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
     <div class="mapmsg">GURS ortofoto • tapni na zemljevid za novo napako.</div>
     <div id="netPanel" style="display:none">
       <div class="nethead"><b>⚡ Elektro omrežje (GURS)</b><button id="netClose" type="button">✕</button></div>
-      <div id="netStatus" class="netstat"></div>
-      <input id="netFilter" placeholder="Filtriraj sloje ...">
-      <div id="netList"></div>
-      <div class="netman"><input id="netManual" placeholder="Ime sloja ročno"><button id="netAdd" type="button">Dodaj</button></div>
+      <div id="netStatus" class="netstat">Enoten prikaz elektro omrežja</div>
+      <div style="font-size:13px;line-height:1.7"><span style="color:#d50000;font-weight:900">━━</span> Vodi (rdeče) &nbsp; <span style="color:#000;font-weight:900">●</span> Točke (črne)</div>
     </div>
   </div>
 </section>
@@ -1321,6 +1319,7 @@ function initMap(){
   setTimeout(function(){
     try{map.invalidateSize(true)}catch(e){}
     refreshOrtho();
+    refreshNet();
   },250);
 }
 
@@ -1328,30 +1327,14 @@ var NET_BASE='https://ipi.eprostor.gov.si/wms-si-gurs-kgi/wms';
 var NET_WFS='https://ipi.eprostor.gov.si/wfs-si-gurs-kgi/wfs';
 var NET_DEFAULT=[{name:'SI.GURS.KGI:LINIJE_ELEKTRICNA_ENERGIJA_G',title:'Elektrika – vodi (GJI)'},{name:'SI.GURS.KGI:TOCKE_ELEKTRICNA_ENERGIJA_G',title:'Elektrika – točke, drogovi, objekti (GJI)'},{name:'SI.GURS.KGI:POLIGONI_ELEKTRICNA_ENERGIJA_G',title:'Elektrika – poligoni (GJI)'}];
 
-// Hiter prikaz: električni vodi so razdeljeni na stalne ~2 km kvadrate.
-// Vsak kvadrat se po prvem prenosu shrani v IndexedDB in se naslednjič izriše takoj.
+// Električni vodi in točke tvorijo en sam samodejno prikazan vektorski sloj.
+// Kvadrati ~2 km se po prvem prenosu shranijo v IndexedDB za hitrejši prikaz.
 var NET_GRID=0.02,NET_CACHE_MS=24*60*60*1000;
-var netLayers=NET_DEFAULT.slice(),netSel=[NET_DEFAULT[0].name],netSrs=[];
+var netSel=[NET_DEFAULT[0].name,NET_DEFAULT[1].name];
 var netOverlay=null,netWms=null,netTimer=null,netErrShown=false;
-var netTileLayers={},netTileData={},netWanted={},netLoading={},netQueue=[],netWorkers=0,netDbPromise=null;
-
-function netList(){
-  var q=el('netFilter').value.trim().toLowerCase();
-  var arr=netLayers.filter(function(l){return !q||(l.title+' '+l.name).toLowerCase().indexOf(q)>=0});
-  el('netList').innerHTML=arr.length?arr.map(function(l){return '<label><input type="checkbox" value="'+esc(l.name)+'"'+(netSel.indexOf(l.name)>=0?' checked':'')+'><span>'+esc(l.title)+'<br><small style="color:#687a88">'+esc(l.name)+'</small></span></label>'}).join(''):'<div style="padding:8px;font-size:13px">Ni slojev.</div>';
-  el('netList').querySelectorAll('input').forEach(function(c){c.onchange=function(){
-    var i=netSel.indexOf(c.value);
-    if(c.checked&&i<0)netSel.push(c.value);
-    if(!c.checked&&i>=0)netSel.splice(i,1);
-    refreshNet();
-  }});
-}
-function netCaps(autoEnable){
-  netLayers=NET_DEFAULT.slice();
-  if(!netSel.length)netSel=[NET_DEFAULT[0].name];
-  netList();
-  el('netStatus').textContent='Električni vodi • hitri predpomnjeni prikaz';
-  if(autoEnable)refreshNet();
+var netTileLayers={},netTileData={},netTileIncomplete={},netWanted={},netLoading={},netQueue=[],netWorkers=0,netDbPromise=null;
+function netCaps(){
+  el('netStatus').textContent='Vodi rdeče • točke črne • GURS';
 }
 function netDb(){
   if(netDbPromise)return netDbPromise;
@@ -1392,7 +1375,7 @@ function netCachePut(key,data){
 }
 function netGridInfo(ix,iy){
   var west=ix*NET_GRID,south=iy*NET_GRID;
-  return {key:ix+'_'+iy,west:west,south:south,east:west+NET_GRID,north:south+NET_GRID};
+  return {key:'elektro_skupaj_v1_'+ix+'_'+iy,west:west,south:south,east:west+NET_GRID,north:south+NET_GRID};
 }
 function netNeededTiles(bounds,margin){
   margin=margin||0;
@@ -1420,7 +1403,11 @@ function netDrawTile(key,data){
   var layer=L.geoJSON(data,{
     pane:'netPane',
     interactive:false,
-    style:function(){return {color:'#d50000',weight:3,opacity:.94,lineCap:'round',lineJoin:'round'}}
+    // Vodi ostanejo rdeči; točke se izrišejo kot črni krogi.
+    style:function(){return {color:'#d50000',weight:3,opacity:.94,lineCap:'round',lineJoin:'round'}},
+    pointToLayer:function(feature,latlng){
+      return L.circleMarker(latlng,{pane:'netPane',interactive:false,radius:3.5,color:'#000000',weight:1.2,fillColor:'#000000',fillOpacity:1});
+    }
   });
   netTileLayers[key]=layer;
   if(netWanted[key])layer.addTo(map);
@@ -1438,26 +1425,51 @@ function netFetchTile(t){
   netLoading[t.key]=true;
   var sw=toD96(t.west,t.south),ne=toD96(t.east,t.north);
   var bbox=[sw[0],sw[1],ne[0],ne[1]].join(',');
-  var url=NET_WFS+
-    '?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature'+
-    '&TYPENAMES='+encodeURIComponent(NET_DEFAULT[0].name)+
-    '&OUTPUTFORMAT='+encodeURIComponent('application/json')+
-    '&SRSNAME=EPSG%3A4326'+
-    '&BBOX='+encodeURIComponent(bbox+',EPSG:3794');
-
-  fetch(url,{cache:'default'}).then(function(r){
-    if(!r.ok)throw new Error('WFS '+r.status);
-    return r.json();
-  }).then(function(data){
-    if(!data||data.type!=='FeatureCollection')throw new Error('Neveljaven WFS odgovor');
-    netDrawTile(t.key,data);
-    netCachePut(t.key,data);
-    netErrShown=false;
+  // Dva GURS vira naložimo vzporedno in ju izrišemo kot en Leaflet sloj.
+  // Če en vir začasno ni dosegljiv, ohranimo prikaz drugega.
+  var requests=NET_DEFAULT.slice(0,2).map(function(source){
+    var url=NET_WFS+
+      '?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature'+
+      '&TYPENAMES='+encodeURIComponent(source.name)+
+      '&OUTPUTFORMAT='+encodeURIComponent('application/json')+
+      '&SRSNAME=EPSG%3A4326'+
+      '&BBOX='+encodeURIComponent(bbox+',EPSG:3794');
+    return fetch(url,{cache:'default'}).then(function(r){
+      if(!r.ok)throw new Error('WFS '+source.title+': '+r.status);
+      return r.json();
+    }).then(function(data){
+      if(!data||data.type!=='FeatureCollection'||!Array.isArray(data.features))
+        throw new Error('Neveljaven WFS odgovor za '+source.title);
+      return data.features;
+    });
+  });
+  Promise.allSettled(requests).then(function(results){
+    var loaded=results.filter(function(r){return r.status==='fulfilled'});
+    if(!loaded.length)throw new Error('Elektro linij in točk ni mogoče naložiti');
+    var complete=loaded.length===requests.length;
+    var features=[];
+    loaded.forEach(function(r){features.push.apply(features,r.value)});
+    var combined={type:'FeatureCollection',features:features};
+    // Za stari delni prikaz ustvarimo svež sloj tudi pri kasnejšem uspešnem prenosu.
+    if(netTileLayers[t.key]){
+      try{if(map&&map.hasLayer(netTileLayers[t.key]))map.removeLayer(netTileLayers[t.key])}catch(e){}
+      delete netTileLayers[t.key];
+    }
+    netTileIncomplete[t.key]=!complete;
+    netDrawTile(t.key,combined);
+    if(complete){
+      netCachePut(t.key,combined);
+      netErrShown=false;
+    }else if(!netErrShown){
+      netErrShown=true;
+      if(el('netStatus'))el('netStatus').textContent='GURS: del omrežja ni dosegljiv. Poskusi premakniti zemljevid.';
+      results.forEach(function(r){if(r.status==='rejected')console.warn('GURS elektro:',r.reason)});
+    }
   }).catch(function(err){
     console.error('GURS elektro '+t.key+':',err);
     if(!netErrShown){
       netErrShown=true;
-      if(el('netStatus'))el('netStatus').textContent='Elektro omrežje: GURS se odziva počasi.';
+      if(el('netStatus'))el('netStatus').textContent='GURS elektro omrežje trenutno ni dosegljivo.';
     }
   }).finally(function(){
     delete netLoading[t.key];
@@ -1476,7 +1488,7 @@ function netPump(){
 function netLoadTile(t){
   if(netTileData[t.key]){
     netDrawTile(t.key,netTileData[t.key]);
-    return;
+    if(!netTileIncomplete[t.key])return;
   }
   netCacheGet(t.key).then(function(cached){
     if(cached&&cached.data){
@@ -1520,14 +1532,14 @@ function refreshNet(){
   clearTimeout(netTimer);
   netTimer=setTimeout(function(){
     if(!netSel.length){netClear();return}
-    var onlyLines=netSel.length===1&&netSel[0]===NET_DEFAULT[0].name;
-    if(!onlyLines){netWmsFallback();return}
-
+    // Linije in točke ostanejo en vektorski sloj, brez izbire pod-slojev.
     if(netWms){try{map.removeLayer(netWms)}catch(e){}netWms=null}
     map.getPane('netPane').style.filter='none';
 
     if(map.getZoom()<15){
-      if(el('netStatus'))el('netStatus').textContent='Za elektro omrežje približaj zemljevid.';
+      netWanted={};
+      netRemoveFarTiles();
+      if(el('netStatus'))el('netStatus').textContent='Za elektro omrežje približaj zemljevid (15+).';
       return;
     }
 
@@ -1543,7 +1555,7 @@ function refreshNet(){
       else netLoadTile(t);
     });
 
-    if(el('netStatus'))el('netStatus').textContent='Elektro vodi • lokalni hitri prikaz';
+    if(el('netStatus')&&!netErrShown)el('netStatus').textContent='Elektro vodi (rdeče) • točke (črne)';
   },70);
 }
 function iconFor(x){var c=color(x);return L.divIcon({className:'',html:'<div style="width:24px;height:24px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:'+c+';border:3px solid white;box-shadow:0 2px 6px #0006"><span style="display:block;width:6px;height:6px;background:#fff;border-radius:50%;margin:6px"></span></div>',iconSize:[24,24],iconAnchor:[12,24]})}
@@ -1960,8 +1972,6 @@ el('gpsBtn').onclick=function(){gps(null,true)}
 el('orthoBtn').onclick=function(){orthoEnabled=!orthoEnabled;this.style.opacity=orthoEnabled?'1':'0.45';if(!orthoEnabled){if(orthoOverlay){try{map.removeLayer(orthoOverlay)}catch(e){}orthoOverlay=null;}if(orthoFallbackTiles&&map.hasLayer(orthoFallbackTiles)){try{map.removeLayer(orthoFallbackTiles)}catch(e){}}toast('Ortofoto izklopljen')}else{orthoErrorShown=false;toast('Ortofoto vklopljen');refreshOrtho()}}
 el('netBtn').onclick=function(){var p=el('netPanel'),show=p.style.display==='none';p.style.display=show?'flex':'none';if(show)netCaps(false)};
 el('netClose').onclick=function(){el('netPanel').style.display='none'};
-el('netFilter').oninput=netList;
-el('netAdd').onclick=function(){var v=el('netManual').value.trim();if(!v)return;if(netSel.indexOf(v)<0)netSel.push(v);if(!netLayers.some(function(l){return l.name===v}))netLayers.unshift({name:v,title:v});netList();refreshNet();el('netManual').value=''};
 el('faultType').onchange=function(){updateFaultDetails()}
 el('mapAddressSearchBtn').onclick=function(){geocodeAddress().catch(function(){})}
 el('mapSearchAddress').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();geocodeAddress().catch(function(){})}})
