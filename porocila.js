@@ -117,7 +117,7 @@ function updateFields(){
     input('DE','area')+input('Skupina','group');
   var subtype='';
   if(data.kind==='NNO'){
-    subtype=input('TP – priključeno omrežje','tp')+input('Naziv izvoda','outlet')+
+    subtype=input('TP – priključeno omrežje','tp')+input('Številka sredstva','assetCode')+input('Naziv izvoda','outlet')+
       select('Obseg','scope',[['cel','Cel vod'],['odsek','Odsek voda']])+
       input('Na odseku od','sectionFrom')+input('Na odseku do','sectionTo')+
       input('Vrsta okvare','fault')+input('Vzrok okvare','cause');
@@ -360,6 +360,8 @@ async function createOriginalReport(d){
 
   if(isNNO){
     await place(34,226,205,15,String(d.tp||'').replace(/^TP\s+/i,''),10.4);
+    // Številka sredstva je na isti vrstici kot naziv TP, desno od /0,4 kV.
+    await place(304,226,270,15,d.assetCode?'Št. sredstva: '+String(d.assetCode).trim():'',10.4);
     await place(111,253,466,15,d.outlet,10.4);
     await place(d.scope==='odsek'?60:7,272,12,15,'✓',10.3,{bold:true});
     if(d.scope==='odsek'){
