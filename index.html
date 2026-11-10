@@ -1193,16 +1193,18 @@ function loadNnoFeeders(){
     // Excel vsebuje nazive TP, v aplikaciji pa so sredstva poimenovana NNO TP.
     // Uporabimo isti ključ za obe imeni in povežemo samo enaka NNO omrežja.
     nnoFeeders={};
-    var nnoKeys={};
+    var existingTpKeys={},nnoKeys={};
     ASSETS.forEach(function(asset){
-      if(/^NNO\s/i.test(asset.name||''))nnoKeys[nnoKey(asset.name)]=true;
+      var name=String(asset.name||''),key=nnoKey(name);
+      if(/^TP(?:\s|-|$)/i.test(name))existingTpKeys[key]=true;
+      if(/^NNO\s/i.test(name))nnoKeys[key]=true;
     });
     Object.keys(byTp).forEach(function(tpName){
-      // Iz Excelovega seznama upoštevamo samo dejanske TP, ki imajo
-      // v aplikaciji istoimensko NNO omrežje. Samostojne TP nimajo izvodov.
+      // Iz Excelovega seznama sprejmemo le TP, ki že obstaja med sredstvi
+      // aplikacije in ima istoimensko NNO omrežje. Izvodi so prikazani le na NNO.
       if(!/^TP(?:\s|-|$)/i.test(tpName.trim()))return;
       var key=nnoKey(tpName),outlets=byTp[tpName];
-      if(!key||!nnoKeys[key]||!Array.isArray(outlets))return;
+      if(!key||!existingTpKeys[key]||!nnoKeys[key]||!Array.isArray(outlets))return;
       if(!nnoFeeders[key])nnoFeeders[key]=[];
       Array.prototype.push.apply(nnoFeeders[key],outlets);
     });
