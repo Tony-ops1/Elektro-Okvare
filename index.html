@@ -828,7 +828,7 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
       <input type="hidden" id="lng">
       <div class="field"><label>Datum in ura</label><input id="reportedAt" type="datetime-local" required></div>
       <div class="field"><label>NAZIV SREDSTVA</label><input id="assetName" list="assetNameList" placeholder="Vpiši ali izberi sredstvo ..." autocomplete="off"><datalist id="assetNameList"></datalist><label style="margin-top:8px">ŠIFRA SREDSTVA</label><input id="assetCode" placeholder="Šifra sredstva" readonly></div>
-      <div class="field" id="nnoOutletField" style="display:none"><label>NAZIV IZVODA (neobvezno)</label><select id="nnoOutlet"><option value="">Izberi izvod ...</option><option value="__manual__">✏️ Ročni vnos izvoda</option></select><input id="nnoOutletManual" placeholder="Vpiši naziv izvoda ..." autocomplete="off" style="display:none;margin-top:8px"><div id="nnoOutletHint" style="font-size:12px;color:#687a88;margin-top:6px">Izvod lahko izbereš ali vpišeš ročno. Izbira ni obvezna.</div></div>
+      <div class="field" id="nnoOutletField" style="display:none"><label>NAZIV IZVODA (neobvezno)</label><select id="nnoOutlet"><option value="">Izberi pripadajoči izvod ...</option></select><input id="nnoOutletManual" placeholder="Ali vpiši naziv izvoda ročno ..." autocomplete="off" style="margin-top:8px"><div id="nnoOutletHint" style="font-size:12px;color:#687a88;margin-top:6px">Izberi ponujeni izvod ali vpiši svojega. Polje ni obvezno.</div></div>
       <div class="field"><label>Vrsta okvare</label><select id="faultType"></select><input id="faultTypeCustom" placeholder="Vpiši drugo vrsto okvare ..."></div>
       <div class="field"><label>Napaka / opravilo</label><select id="faultDetail"></select><input id="faultDetailCustom" placeholder="Vpiši drugo napako / opravilo ..."></div>
       <div class="field"><label>Prioriteta</label><select id="priority"><option>kritično</option><option>visoka</option><option selected>normalna</option><option>nizka</option></select></div>
@@ -1153,48 +1153,37 @@ function nnoKey(name){
 }
 function updateNnoOutlets(selectedCode,selectedName){
   var field=el('nnoOutletField'),sel=el('nnoOutlet'),manual=el('nnoOutletManual');
-  var prior=sel.value||'',wasManual=prior==='__manual__';
-  var requestedCode=selectedCode===undefined?(sel.dataset.pendingCode||(wasManual?'':prior)):String(selectedCode||'');
-  var requestedName=selectedName===undefined?(sel.dataset.pendingName||manual.value||''):String(selectedName||'');
+  var requestedCode=selectedCode===undefined?(sel.dataset.pendingCode||sel.value||''):String(selectedCode||'');
+  var requestedName=selectedName===undefined?(manual.value||sel.dataset.pendingName||''):String(selectedName||'');
   var assetName=String(el('assetName').value||'').trim();
-  // Izvodi pripadajo izključno NNO omrežjem; TP, SN in ostala sredstva jih nimajo.
+  // Izvode ponudimo samo za NNO, nikoli za samostojne TP in druga sredstva.
   if(!/^NNO(?:\s|$)/i.test(assetName)){
     field.style.display='none';
     sel.dataset.pendingCode='';
     sel.dataset.pendingName='';
     sel.value='';
     manual.value='';
-    manual.style.display='none';
     return;
   }
   field.style.display='';
   var asset=findAssetByName(assetName);
   var options=asset&&nnoFeeders?nnoFeeders[nnoKey(asset.name)]||[]:[];
-  sel.innerHTML='<option value="">Izberi izvod (neobvezno) ...</option>'+options.map(function(x){
+  sel.innerHTML='<option value="">Izberi pripadajoči izvod (neobvezno) ...</option>'+options.map(function(x){
     return '<option value="'+esc(x[0])+'">'+esc(x[1])+' ('+esc(x[0])+')</option>';
-  }).join('')+'<option value="__manual__">✏️ Ročni vnos izvoda</option>';
+  }).join('');
   var matched=options.find(function(x){return String(x[0])===requestedCode});
-  if(matched){
-    sel.value=String(matched[0]);
-    manual.value='';
-  }else if(requestedName||wasManual){
-    sel.value='__manual__';
-    manual.value=requestedName;
-  }else{
-    sel.value='';
-    manual.value='';
-  }
-  manual.style.display=sel.value==='__manual__'?'':'none';
+  sel.value=matched?String(matched[0]):'';
+  manual.value=matched?String(matched[1]):requestedName;
   if(!nnoFeeders){
     sel.dataset.pendingCode=requestedCode;
     sel.dataset.pendingName=requestedName;
-    el('nnoOutletHint').textContent='Nalagam izvode. Lahko jih vpišeš tudi ročno.';
+    el('nnoOutletHint').textContent='Nalagam izvode. Naziv lahko že vpišeš ročno.';
   }else{
     sel.dataset.pendingCode='';
     sel.dataset.pendingName='';
     el('nnoOutletHint').textContent=options.length?
-      options.length+' izvodov za ta NNO. Izbira ni obvezna.':
-      'Za ta NNO ni izvodov na seznamu. Lahko jih vpišeš ročno.';
+      options.length+' izvodov za ta NNO. Izberi izvod ali vpiši svojega.':
+      'Za ta NNO ni izvodov v seznamu. Lahko vpišeš naziv ročno.';
   }
 }
 function loadNnoFeeders(){
@@ -1236,15 +1225,19 @@ function loadNnoFeeders(){
 function nnoSelectedFeed(){
   var assetName=String(el('assetName').value||'').trim();
   if(!/^NNO(?:\s|$)/i.test(assetName))return null;
-  var code=el('nnoOutlet').value;
-  if(code==='__manual__'){
-    var name=el('nnoOutletManual').value.trim();
-    return name?[null,name]:null;
-  }
-  if(!code)return null;
-  var asset=findAssetByName(assetName);
+  var name=el('nnoOutletManual').value.trim();
+  if(!name)return null;
+  var asset=findAssetByName(assetName),sel=el('nnoOutlet');
   var options=asset&&nnoFeeders?nnoFeeders[nnoKey(asset.name)]||[]:[];
-  return options.find(function(x){return String(x[0])===code})||null;
+  var byCode=options.find(function(x){return String(x[0])===sel.value});
+  if(byCode&&String(byCode[1]).trim()===name)return byCode;
+  // Če uporabnik vpiše natanko enega od znanih izvodov, ohranimo njegovo šifro.
+  var sameName=options.filter(function(x){return String(x[1]).trim().toUpperCase()===name.toUpperCase()});
+  if(sameName.length===1)return sameName[0];
+  // Pri urejanju med začasnim izpadom seznama ne izgubimo že shranjene šifre.
+  if(!nnoFeeders&&sel.dataset.pendingCode&&sel.dataset.pendingName===name)
+    return [sel.dataset.pendingCode,name];
+  return [null,name];
 }
 function updateAssetCode(){
   var a=findAssetByName(el('assetName').value);
@@ -1256,14 +1249,18 @@ function initTypes(){
   el('assetName').oninput=updateAssetCode;
   el('assetName').onchange=updateAssetCode;
   el('nnoOutlet').onchange=function(){
-    var manual=el('nnoOutletManual');
-    manual.style.display=this.value==='__manual__'?'':'none';
-    if(this.value!=='__manual__')manual.value='';
+    var asset=findAssetByName(el('assetName').value);
+    var options=asset&&nnoFeeders?nnoFeeders[nnoKey(asset.name)]||[]:[];
+    var chosen=options.find(function(x){return String(x[0])===el('nnoOutlet').value});
+    el('nnoOutletManual').value=chosen?String(chosen[1]):'';
     this.dataset.pendingCode='';
     this.dataset.pendingName='';
   };
   el('nnoOutletManual').oninput=function(){
-    el('nnoOutlet').dataset.pendingName=this.value;
+    var sel=el('nnoOutlet');
+    sel.value='';
+    sel.dataset.pendingCode='';
+    sel.dataset.pendingName=this.value;
   };
   loadNnoFeeders();
   el('faultType').innerHTML='<option value="">Izberi ...</option>'+TYPES.map(function(x){return '<option>'+esc(x)+'</option>'}).join('');
@@ -1945,7 +1942,6 @@ function resetForm(){
   el('nnoOutlet').dataset.pendingCode='';
   el('nnoOutlet').dataset.pendingName='';
   el('nnoOutletManual').value='';
-  el('nnoOutletManual').style.display='none';
   el('nnoOutletField').style.display='none';
   el('priority').value='normalna';
   el('status').value='prijavljeno';
