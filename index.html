@@ -1189,7 +1189,16 @@ function loadNnoFeeders(){
     if(!encoded||typeof DecompressionStream==='undefined')throw new Error('Seznama izvodov ni mogoče odpreti');
     var bytes=Uint8Array.from(atob(encoded),function(c){return c.charCodeAt(0)});
     var stream=new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
-    nnoFeeders=JSON.parse(await new Response(stream).text());
+    var byTp=JSON.parse(await new Response(stream).text());
+    // Excel vsebuje nazive TP, v aplikaciji pa so sredstva poimenovana NNO TP.
+    // Uporabimo isti ključ za obe imeni in povežemo samo enaka NNO omrežja.
+    nnoFeeders={};
+    Object.keys(byTp).forEach(function(tpName){
+      var key=nnoKey(tpName),outlets=byTp[tpName];
+      if(!key||!Array.isArray(outlets))return;
+      if(!nnoFeeders[key])nnoFeeders[key]=[];
+      Array.prototype.push.apply(nnoFeeders[key],outlets);
+    });
     updateNnoOutlets(el('nnoOutlet').dataset.pendingCode||undefined);
   }).catch(function(err){
     console.error('NNO izvodi:',err);
