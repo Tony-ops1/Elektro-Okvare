@@ -1223,9 +1223,9 @@ function loadNnoFeeders(){
       if(/^NNO\s/i.test(name))nnoKeys[key]=true;
     });
     Object.keys(byTp).forEach(function(tpName){
-      // Iz Excelovega seznama sprejmemo le TP, ki že obstaja med sredstvi
-      // aplikacije in ima istoimensko NNO omrežje. Izvodi so prikazani le na NNO.
-      if(!/^TP(?:\s|-|$)/i.test(tpName.trim()))return;
+      // Ključi v nno-izvodi.js so že normalizirani (brez predpone TP).
+      // Uporabimo samo obstoječe pare TP + istoimenski NNO, izvode
+      // pa prikažemo izključno pri NNO sredstvu.
       var key=nnoKey(tpName),outlets=byTp[tpName];
       if(!key||!existingTpKeys[key]||!nnoKeys[key]||!Array.isArray(outlets))return;
       if(!nnoFeeders[key])nnoFeeders[key]=[];
