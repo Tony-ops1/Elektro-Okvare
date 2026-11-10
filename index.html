@@ -828,7 +828,7 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
       <input type="hidden" id="lng">
       <div class="field"><label>Datum in ura</label><input id="reportedAt" type="datetime-local" required></div>
       <div class="field"><label>NAZIV SREDSTVA</label><input id="assetName" list="assetNameList" placeholder="Vpiši ali izberi sredstvo ..." autocomplete="off"><datalist id="assetNameList"></datalist><label style="margin-top:8px">ŠIFRA SREDSTVA</label><input id="assetCode" placeholder="Šifra sredstva" readonly></div>
-      <div class="field" id="nnoOutletField" style="display:none"><label>IZVOD NNO OMREŽJA</label><select id="nnoOutlet"><option value="">Izberi izvod ...</option></select><div id="nnoOutletHint" style="font-size:12px;color:#687a88;margin-top:6px">Izvodi pripadajo izbranemu NNO omrežju.</div></div>
+      <div class="field" id="nnoOutletField" style="display:none"><label>NAZIV IZVODA (neobvezno)</label><select id="nnoOutlet"><option value="">Izberi izvod ...</option><option value="__manual__">✏️ Ročni vnos izvoda</option></select><input id="nnoOutletManual" placeholder="Vpiši naziv izvoda ..." autocomplete="off" style="display:none;margin-top:8px"><div id="nnoOutletHint" style="font-size:12px;color:#687a88;margin-top:6px">Izvod lahko izbereš ali vpišeš ročno. Izbira ni obvezna.</div></div>
       <div class="field"><label>Vrsta okvare</label><select id="faultType"></select><input id="faultTypeCustom" placeholder="Vpiši drugo vrsto okvare ..."></div>
       <div class="field"><label>Napaka / opravilo</label><select id="faultDetail"></select><input id="faultDetailCustom" placeholder="Vpiši drugo napako / opravilo ..."></div>
       <div class="field"><label>Prioriteta</label><select id="priority"><option>kritično</option><option>visoka</option><option selected>normalna</option><option>nizka</option></select></div>
@@ -1151,36 +1151,51 @@ function nnoKey(name){
   return String(name||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase()
     .replace(/^\s*(?:NNO\s*)?(?:TP\s*)?[-\s]*/,'').replace(/[^A-Z0-9]/g,'');
 }
-function updateNnoOutlets(selectedCode){
-  var field=el('nnoOutletField'),sel=el('nnoOutlet');
-  var requested=selectedCode===undefined?(sel.dataset.pendingCode||sel.value||''):String(selectedCode||'');
-  var asset=findAssetByName(el('assetName').value);
-  if(!asset||String(asset.name).slice(0,4).toUpperCase()!=='NNO '){
+function updateNnoOutlets(selectedCode,selectedName){
+  var field=el('nnoOutletField'),sel=el('nnoOutlet'),manual=el('nnoOutletManual');
+  var prior=sel.value||'',wasManual=prior==='__manual__';
+  var requestedCode=selectedCode===undefined?(sel.dataset.pendingCode||(wasManual?'':prior)):String(selectedCode||'');
+  var requestedName=selectedName===undefined?(sel.dataset.pendingName||manual.value||''):String(selectedName||'');
+  var assetName=String(el('assetName').value||'').trim();
+  // Izvodi pripadajo izključno NNO omrežjem; TP, SN in ostala sredstva jih nimajo.
+  if(!/^NNO(?:\s|$)/i.test(assetName)){
     field.style.display='none';
     sel.dataset.pendingCode='';
-    sel.innerHTML='<option value="">Izberi izvod ...</option>';
+    sel.dataset.pendingName='';
+    sel.value='';
+    manual.value='';
+    manual.style.display='none';
     return;
   }
-  sel.dataset.pendingCode=requested;
   field.style.display='';
-  if(!nnoFeeders){
-    sel.disabled=true;
-    sel.innerHTML='<option value="">Nalagam izvode ...</option>';
-    return;
-  }
-  var options=nnoFeeders[nnoKey(asset.name)]||[];
-  if(!options.length){
-    field.style.display='none';
-    sel.innerHTML='<option value="">Ni povezanih izvodov</option>';
-    return;
-  }
-  sel.disabled=false;
-  sel.innerHTML='<option value="">Izberi izvod ...</option>'+options.map(function(x){
+  var asset=findAssetByName(assetName);
+  var options=asset&&nnoFeeders?nnoFeeders[nnoKey(asset.name)]||[]:[];
+  sel.innerHTML='<option value="">Izberi izvod (neobvezno) ...</option>'+options.map(function(x){
     return '<option value="'+esc(x[0])+'">'+esc(x[1])+' ('+esc(x[0])+')</option>';
-  }).join('');
-  if(requested&&options.some(function(x){return x[0]===requested}))sel.value=requested;
-  sel.dataset.pendingCode='';
-  el('nnoOutletHint').textContent=options.length+' izvodov iz izbrane TP';
+  }).join('')+'<option value="__manual__">✏️ Ročni vnos izvoda</option>';
+  var matched=options.find(function(x){return String(x[0])===requestedCode});
+  if(matched){
+    sel.value=String(matched[0]);
+    manual.value='';
+  }else if(requestedName||wasManual){
+    sel.value='__manual__';
+    manual.value=requestedName;
+  }else{
+    sel.value='';
+    manual.value='';
+  }
+  manual.style.display=sel.value==='__manual__'?'':'none';
+  if(!nnoFeeders){
+    sel.dataset.pendingCode=requestedCode;
+    sel.dataset.pendingName=requestedName;
+    el('nnoOutletHint').textContent='Nalagam izvode. Lahko jih vpišeš tudi ročno.';
+  }else{
+    sel.dataset.pendingCode='';
+    sel.dataset.pendingName='';
+    el('nnoOutletHint').textContent=options.length?
+      options.length+' izvodov za ta NNO. Izbira ni obvezna.':
+      'Za ta NNO ni izvodov na seznamu. Lahko jih vpišeš ročno.';
+  }
 }
 function loadNnoFeeders(){
   if(nnoFeedersPromise)return nnoFeedersPromise;
@@ -1208,34 +1223,48 @@ function loadNnoFeeders(){
       if(!nnoFeeders[key])nnoFeeders[key]=[];
       Array.prototype.push.apply(nnoFeeders[key],outlets);
     });
-    updateNnoOutlets(el('nnoOutlet').dataset.pendingCode||undefined);
+    updateNnoOutlets();
   }).catch(function(err){
     console.error('NNO izvodi:',err);
     nnoFeeders={};
     updateNnoOutlets();
-    if(el('nnoOutletField').style.display!=='none'){
-      el('nnoOutlet').disabled=true;
-      el('nnoOutlet').innerHTML='<option value="">Izvodi niso na voljo</option>';
-    }
+    if(el('nnoOutletField').style.display!=='none')
+      el('nnoOutletHint').textContent='Seznam izvodov ni dosegljiv. Vnesi naziv ročno ali pusti prazno.';
   });
   return nnoFeedersPromise;
 }
 function nnoSelectedFeed(){
-  var asset=findAssetByName(el('assetName').value);
-  if(!asset||String(asset.name).slice(0,4).toUpperCase()!=='NNO ')return null;
-  var options=nnoFeeders&&nnoFeeders[nnoKey(asset.name)]||[];
+  var assetName=String(el('assetName').value||'').trim();
+  if(!/^NNO(?:\s|$)/i.test(assetName))return null;
   var code=el('nnoOutlet').value;
-  return options.find(function(x){return x[0]===code})||null;
+  if(code==='__manual__'){
+    var name=el('nnoOutletManual').value.trim();
+    return name?[null,name]:null;
+  }
+  if(!code)return null;
+  var asset=findAssetByName(assetName);
+  var options=asset&&nnoFeeders?nnoFeeders[nnoKey(asset.name)]||[]:[];
+  return options.find(function(x){return String(x[0])===code})||null;
 }
 function updateAssetCode(){
   var a=findAssetByName(el('assetName').value);
   el('assetCode').value=a?a.code:'';
-  updateNnoOutlets('');
+  updateNnoOutlets('','');
 }
 function initTypes(){
   el('assetNameList').innerHTML=ASSETS.map(function(x){return '<option value="'+esc(x.name)+'" label="'+esc(x.code)+'"></option>'}).join('');
   el('assetName').oninput=updateAssetCode;
   el('assetName').onchange=updateAssetCode;
+  el('nnoOutlet').onchange=function(){
+    var manual=el('nnoOutletManual');
+    manual.style.display=this.value==='__manual__'?'':'none';
+    if(this.value!=='__manual__')manual.value='';
+    this.dataset.pendingCode='';
+    this.dataset.pendingName='';
+  };
+  el('nnoOutletManual').oninput=function(){
+    el('nnoOutlet').dataset.pendingName=this.value;
+  };
   loadNnoFeeders();
   el('faultType').innerHTML='<option value="">Izberi ...</option>'+TYPES.map(function(x){return '<option>'+esc(x)+'</option>'}).join('');
   el('typeFilter').innerHTML='<option value="">Vse vrste</option>'+TYPES.map(function(x){return '<option>'+esc(x)+'</option>'}).join('');
@@ -1914,6 +1943,9 @@ function resetForm(){
   el('assetCode').value='';
   el('nnoOutlet').value='';
   el('nnoOutlet').dataset.pendingCode='';
+  el('nnoOutlet').dataset.pendingName='';
+  el('nnoOutletManual').value='';
+  el('nnoOutletManual').style.display='none';
   el('nnoOutletField').style.display='none';
   el('priority').value='normalna';
   el('status').value='prijavljeno';
@@ -1940,7 +1972,7 @@ function openEdit(x){
   el('lng').value=x.lng;
   el('assetName').value=x.assetName||'';
   el('assetCode').value=x.assetCode||(findAssetByName(x.assetName)||{}).code||'';
-  updateNnoOutlets(x.nnoOutletCode||'');
+  updateNnoOutlets(x.nnoOutletCode||'',x.nnoOutletName||'');
   if(TYPES.indexOf(x.type)>=0){
     el('faultType').value=x.type;
     el('faultTypeCustom').value='';
@@ -2154,7 +2186,7 @@ el('issueForm').onsubmit=async function(e){
       lat:lat,lng:lng,location_address:old?old.locationAddress||'':'',
       asset_name:el('assetName').value.trim(),
       asset_code:el('assetCode').value.trim(),
-      nno_outlet_code:selectedNnoFeed?selectedNnoFeed[0]:null,
+      nno_outlet_code:selectedNnoFeed&&selectedNnoFeed[0]?selectedNnoFeed[0]:null,
       nno_outlet_name:selectedNnoFeed?selectedNnoFeed[1]:null,
       type:typeVal,fault_detail:detailVal,priority:el('priority').value,status:el('status').value,
       reported_by_name:el('reportedBy').value.trim()||(currentProfile.display_name||currentProfile.username),
