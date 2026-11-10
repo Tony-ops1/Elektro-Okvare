@@ -97,7 +97,7 @@ function defaults(x){
     kind:kind,date:datePart(x.reportedAt)||datePart(new Date()),from:timePart(x.reportedAt),
     to:timePart(x.resolvedAt),reason:'odprava',area:'Novo mesto',group:'RV Novo mesto',
     tp:kind==='SN'?'':tpName,asset:name,assetCode:val(x.assetCode),
-    location:val(x.locationAddress),gpsLat:issueCoords(x)?issueCoords(x).lat:'',gpsLng:issueCoords(x)?issueCoords(x).lng:'',outlet:kind==='NNO'?val(x.nnoOutletName):'',scope:'cel',sectionFrom:'',sectionTo:'',
+    location:val(x.locationAddress),gpsLat:issueCoords(x)?issueCoords(x).lat:'',gpsLng:issueCoords(x)?issueCoords(x).lng:'',outlet:kind==='NNO'?val(x.nnoOutletName):'',outletCode:kind==='NNO'?val(x.nnoOutletCode):'',scope:'cel',sectionFrom:'',sectionTo:'',
     medium: /^KB[\s\/-]/i.test(name)?'KB':'DV',voltage:'20',orderNo:'',
     fault:faultFromIssue,cause:causeFromDescription,
     description:val(x.description),suggestions:locationInThirdProposalLine(faultFromIssue,faultLocation(x),faultXY(x)),measures:'',
@@ -117,7 +117,7 @@ function updateFields(){
     input('DE','area')+input('Skupina','group');
   var subtype='';
   if(data.kind==='NNO'){
-    subtype=input('TP – priključeno omrežje','tp')+input('Številka sredstva','assetCode')+input('Naziv izvoda','outlet')+
+    subtype=input('TP – priključeno omrežje','tp')+input('Številka sredstva','assetCode')+input('Naziv izvoda','outlet')+input('Številka izvoda','outletCode')+
       select('Obseg','scope',[['cel','Cel vod'],['odsek','Odsek voda']])+
       input('Na odseku od','sectionFrom')+input('Na odseku do','sectionTo')+
       input('Vrsta okvare','fault')+input('Vzrok okvare','cause');
@@ -225,7 +225,7 @@ function details(d){
     intro='<div class="eopr-title">POROČILO O NEGI IN OKVARI NA NN VODU</div>'+
     '<p>Dne '+dot(dateSl(d.date))+' od '+dot(d.from)+' do '+dot(d.to)+' je bilo moteno zaradi '+dot(d.reason==='nega'?'nege':'odprave okvare')+'</p>'+
     '<p>nizkonapetostno omrežje, priključeno na TP '+dot(d.tp)+' /0,4 kV</p>'+
-    '<p>Na izvodu (naziv) '+dot(d.outlet)+'</p>'+
+    '<p>Na izvodu (naziv) '+dot(d.outlet)+(d.outletCode?' — številka izvoda: '+dot(d.outletCode):'')+'</p>'+
     '<p>'+dot(d.scope==='cel'?'● cel vod / ○ na odseku':'○ cel vod / ● na odseku')+
     ' od '+dot(d.scope==='odsek'?d.sectionFrom:'')+' do '+dot(d.scope==='odsek'?d.sectionTo:'')+'</p>'+
     '<p>je prišlo do sledeče okvare:</p><p>vrsta '+dot(d.fault)+'</p><p>vzroka '+dot(d.cause)+'</p>';
@@ -362,7 +362,13 @@ async function createOriginalReport(d){
     await place(34,226,205,15,String(d.tp||'').replace(/^TP\s+/i,''),10.4);
     // Številka sredstva je na isti vrstici kot naziv TP, desno od /0,4 kV.
     await place(304,226,270,15,d.assetCode?'Št. sredstva: '+String(d.assetCode).trim():'',10.4);
-    await place(111,253,466,15,d.outlet,10.4);
+    // Na vrstici izvoda ohranimo naziv levo in dopišemo številko izvoda desno.
+    if(d.outletCode){
+      await place(111,253,307,15,d.outlet,10.4);
+      await place(423,253,154,15,'Št. izvoda: '+String(d.outletCode).trim(),10.0);
+    }else{
+      await place(111,253,466,15,d.outlet,10.4);
+    }
     await place(d.scope==='odsek'?60:7,272,12,15,'✓',10.3,{bold:true});
     if(d.scope==='odsek'){
       await place(149,276,253,15,d.sectionFrom,10.3);
