@@ -97,7 +97,7 @@ function defaults(x){
     kind:kind,date:datePart(x.reportedAt)||datePart(new Date()),from:timePart(x.reportedAt),
     to:timePart(x.resolvedAt),reason:'odprava',area:'Novo mesto',group:'RV Novo mesto',
     tp:kind==='SN'?'':tpName,asset:name,assetCode:val(x.assetCode),
-    location:val(x.locationAddress),gpsLat:issueCoords(x)?issueCoords(x).lat:'',gpsLng:issueCoords(x)?issueCoords(x).lng:'',outlet:'',scope:'cel',sectionFrom:'',sectionTo:'',
+    location:val(x.locationAddress),gpsLat:issueCoords(x)?issueCoords(x).lat:'',gpsLng:issueCoords(x)?issueCoords(x).lng:'',outlet:kind==='NNO'?val(x.nnoOutletName):'',scope:'cel',sectionFrom:'',sectionTo:'',
     medium: /^KB[\s\/-]/i.test(name)?'KB':'DV',voltage:'20',orderNo:'',
     fault:faultFromIssue,cause:causeFromDescription,
     description:val(x.description),suggestions:locationInThirdProposalLine(faultFromIssue,faultLocation(x),faultXY(x)),measures:'',
