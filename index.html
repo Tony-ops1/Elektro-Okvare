@@ -814,7 +814,7 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
   </div>
 </section>
 
-<section id="statsView" class="view"><div class="stats"><div class="stat"><b id="sOpen">0</b>Odprtih</div><div class="stat"><b id="sCritical">0</b>Kritičnih</div><div class="stat"><b id="sDone">0</b>Odpravljenih</div><div class="stat"><b id="sAll">0</b>Vseh</div></div></section>
+<section id="statsView" class="view"><div class="stats"><div class="stat"><b id="sOpen">0</b>Odprtih</div><div class="stat"><b id="sCritical">0</b>Kritičnih</div><div class="stat"><b id="sDone">0</b>Odpravljenih</div><div class="stat"><b id="sAll">0</b>Vseh</div><div class="stat"><b id="sClosedTotal">0</b>Skupaj zaključenih<small id="sClosedBreakdown" style="display:block;font-size:12px;color:#687a88;margin-top:8px">0 zaključenih + 0 v arhivu</small></div></div></section>
 </main>
 
 <div class="modal" id="modal">
@@ -1649,7 +1649,11 @@ function stats(){
   el('sOpen').textContent=o.length;
   el('sCritical').textContent=o.filter(function(x){return x.priority==='kritično'}).length;
   el('sDone').textContent=active.length-o.length;
-  el('sAll').textContent=active.length
+  el('sAll').textContent=active.length;
+  var closed=active.filter(function(x){return x.status==='zaključeno'}).length;
+  var archived=issues.length-active.length;
+  el('sClosedTotal').textContent=closed+archived;
+  el('sClosedBreakdown').textContent=closed+' zaključenih + '+archived+' v arhivu'
 }
 function renderAll(){renderMarkers();renderLists();stats()}
 var weatherLoadedAt=0;
