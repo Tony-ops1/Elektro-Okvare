@@ -828,6 +828,7 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
       <input type="hidden" id="lng">
       <div class="field"><label>Datum in ura</label><input id="reportedAt" type="datetime-local" required></div>
       <div class="field"><label>NAZIV SREDSTVA</label><input id="assetName" list="assetNameList" placeholder="Vpiši ali izberi sredstvo ..." autocomplete="off"><datalist id="assetNameList"></datalist><label style="margin-top:8px">ŠIFRA SREDSTVA</label><input id="assetCode" placeholder="Šifra sredstva" readonly></div>
+      <div class="field" id="nnoOutletField" style="display:none"><label>IZVOD NNO OMREŽJA</label><select id="nnoOutlet"><option value="">Izberi izvod ...</option></select><div id="nnoOutletHint" style="font-size:12px;color:#687a88;margin-top:6px">Izvodi pripadajo izbranemu NNO omrežju.</div></div>
       <div class="field"><label>Vrsta okvare</label><select id="faultType"></select><input id="faultTypeCustom" placeholder="Vpiši drugo vrsto okvare ..."></div>
       <div class="field"><label>Napaka / opravilo</label><select id="faultDetail"></select><input id="faultDetailCustom" placeholder="Vpiši drugo napako / opravilo ..."></div>
       <div class="field"><label>Prioriteta</label><select id="priority"><option>kritično</option><option>visoka</option><option selected>normalna</option><option>nizka</option></select></div>
@@ -853,6 +854,7 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
 //# sourceMappingURL=leaflet.js.map
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="nno-izvodi.js?v=1"></script>
 <script>
 (function(){
 'use strict';
@@ -993,7 +995,7 @@ function slugUsername(v){return String(v||'').trim().toLowerCase().normalize('NF
 function authPassword(pin){return 'EO-'+String(pin||'')+'-okvare!'}
 function dbToIssue(r,photoMap){return {
   id:r.id,reportedAt:r.reported_at,lat:r.lat,lng:r.lng,locationAddress:r.location_address||'',
-  area:'',object:'',ident:'',maximo:'',assetName:r.asset_name||'',assetCode:r.asset_code||'',type:r.type||'',faultDetail:r.fault_detail||'',
+  area:'',object:'',ident:'',maximo:'',assetName:r.asset_name||'',assetCode:r.asset_code||'',nnoOutletCode:r.nno_outlet_code||'',nnoOutletName:r.nno_outlet_name||'',type:r.type||'',faultDetail:r.fault_detail||'',
   priority:r.priority||'normalna',status:r.status||'prijavljeno',
   reportedBy:r.reported_by_name||'',assignedTo:r.assigned_to_name||'',
   description:r.description||'',notes:r.notes||'',photos:(photoMap&&photoMap[r.id])||[],
@@ -1144,14 +1146,79 @@ function findAssetByName(v){
   }
   return null;
 }
+var nnoFeeders=null,nnoFeedersPromise=null;
+function nnoKey(name){
+  return String(name||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase()
+    .replace(/^\s*(?:NNO\s*)?(?:TP\s*)?[-\s]*/,'').replace(/[^A-Z0-9]/g,'');
+}
+function updateNnoOutlets(selectedCode){
+  var field=el('nnoOutletField'),sel=el('nnoOutlet');
+  var requested=selectedCode===undefined?(sel.dataset.pendingCode||sel.value||''):String(selectedCode||'');
+  var asset=findAssetByName(el('assetName').value);
+  if(!asset||String(asset.name).slice(0,4).toUpperCase()!=='NNO '){
+    field.style.display='none';
+    sel.dataset.pendingCode='';
+    sel.innerHTML='<option value="">Izberi izvod ...</option>';
+    return;
+  }
+  sel.dataset.pendingCode=requested;
+  field.style.display='';
+  if(!nnoFeeders){
+    sel.disabled=true;
+    sel.innerHTML='<option value="">Nalagam izvode ...</option>';
+    return;
+  }
+  var options=nnoFeeders[nnoKey(asset.name)]||[];
+  if(!options.length){
+    field.style.display='none';
+    sel.innerHTML='<option value="">Ni povezanih izvodov</option>';
+    return;
+  }
+  sel.disabled=false;
+  sel.innerHTML='<option value="">Izberi izvod ...</option>'+options.map(function(x){
+    return '<option value="'+esc(x[0])+'">'+esc(x[1])+' ('+esc(x[0])+')</option>';
+  }).join('');
+  if(requested&&options.some(function(x){return x[0]===requested}))sel.value=requested;
+  sel.dataset.pendingCode='';
+  el('nnoOutletHint').textContent=options.length+' izvodov iz izbrane TP';
+}
+function loadNnoFeeders(){
+  if(nnoFeedersPromise)return nnoFeedersPromise;
+  nnoFeedersPromise=Promise.resolve().then(async function(){
+    var encoded=window.NNO_IZVODI_GZIP||'';
+    if(!encoded||typeof DecompressionStream==='undefined')throw new Error('Seznama izvodov ni mogoče odpreti');
+    var bytes=Uint8Array.from(atob(encoded),function(c){return c.charCodeAt(0)});
+    var stream=new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+    nnoFeeders=JSON.parse(await new Response(stream).text());
+    updateNnoOutlets(el('nnoOutlet').dataset.pendingCode||undefined);
+  }).catch(function(err){
+    console.error('NNO izvodi:',err);
+    nnoFeeders={};
+    updateNnoOutlets();
+    if(el('nnoOutletField').style.display!=='none'){
+      el('nnoOutlet').disabled=true;
+      el('nnoOutlet').innerHTML='<option value="">Izvodi niso na voljo</option>';
+    }
+  });
+  return nnoFeedersPromise;
+}
+function nnoSelectedFeed(){
+  var asset=findAssetByName(el('assetName').value);
+  if(!asset||String(asset.name).slice(0,4).toUpperCase()!=='NNO ')return null;
+  var options=nnoFeeders&&nnoFeeders[nnoKey(asset.name)]||[];
+  var code=el('nnoOutlet').value;
+  return options.find(function(x){return x[0]===code})||null;
+}
 function updateAssetCode(){
   var a=findAssetByName(el('assetName').value);
   el('assetCode').value=a?a.code:'';
+  updateNnoOutlets('');
 }
 function initTypes(){
   el('assetNameList').innerHTML=ASSETS.map(function(x){return '<option value="'+esc(x.name)+'" label="'+esc(x.code)+'"></option>'}).join('');
   el('assetName').oninput=updateAssetCode;
   el('assetName').onchange=updateAssetCode;
+  loadNnoFeeders();
   el('faultType').innerHTML='<option value="">Izberi ...</option>'+TYPES.map(function(x){return '<option>'+esc(x)+'</option>'}).join('');
   el('typeFilter').innerHTML='<option value="">Vse vrste</option>'+TYPES.map(function(x){return '<option>'+esc(x)+'</option>'}).join('');
   updateFaultDetails();
@@ -1827,6 +1894,9 @@ function resetForm(){
   el('clientRequestId').value=requestUuid();
   el('reportedAt').value=nowInput();
   el('assetCode').value='';
+  el('nnoOutlet').value='';
+  el('nnoOutlet').dataset.pendingCode='';
+  el('nnoOutletField').style.display='none';
   el('priority').value='normalna';
   el('status').value='prijavljeno';
   updateFaultDetails();
@@ -1852,6 +1922,7 @@ function openEdit(x){
   el('lng').value=x.lng;
   el('assetName').value=x.assetName||'';
   el('assetCode').value=x.assetCode||(findAssetByName(x.assetName)||{}).code||'';
+  updateNnoOutlets(x.nnoOutletCode||'');
   if(TYPES.indexOf(x.type)>=0){
     el('faultType').value=x.type;
     el('faultTypeCustom').value='';
@@ -2054,6 +2125,7 @@ el('issueForm').onsubmit=async function(e){
   if(!typeVal){toast('Izberi ali vpiši vrsto okvare');return}
   if(!detailVal){toast('Izberi ali vpiši napako / opravilo');return}
 
+  var selectedNnoFeed=nnoSelectedFeed();
   issueSaving=true;
   var saveBtn=el('saveIssueBtn');
   if(saveBtn){saveBtn.disabled=true;saveBtn.textContent='Shranjujem ...'}
@@ -2064,6 +2136,8 @@ el('issueForm').onsubmit=async function(e){
       lat:lat,lng:lng,location_address:old?old.locationAddress||'':'',
       asset_name:el('assetName').value.trim(),
       asset_code:el('assetCode').value.trim(),
+      nno_outlet_code:selectedNnoFeed?selectedNnoFeed[0]:null,
+      nno_outlet_name:selectedNnoFeed?selectedNnoFeed[1]:null,
       type:typeVal,fault_detail:detailVal,priority:el('priority').value,status:el('status').value,
       reported_by_name:el('reportedBy').value.trim()||(currentProfile.display_name||currentProfile.username),
       assigned_to_name:el('assignedTo').value.trim(),description:el('description').value.trim(),notes:el('notes').value.trim()
