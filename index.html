@@ -828,7 +828,7 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
       <input type="hidden" id="lng">
       <div class="field"><label>Datum in ura</label><input id="reportedAt" type="datetime-local" required></div>
       <div class="field"><label>NAZIV SREDSTVA</label><input id="assetName" list="assetNameList" placeholder="Vpiši ali izberi sredstvo ..." autocomplete="off"><datalist id="assetNameList"></datalist><label style="margin-top:8px">ŠIFRA SREDSTVA</label><input id="assetCode" placeholder="Šifra sredstva" readonly></div>
-      <div class="field" id="nnoOutletField" style="display:none"><label>NAZIV IZVODA (neobvezno)</label><select id="nnoOutlet"><option value="">Izberi pripadajoči izvod ...</option></select><div id="nnoOutletChoices" style="display:none;max-height:185px;overflow-y:auto;margin-top:8px;border:1px solid #d4e1e9;border-radius:9px;padding:5px"></div><input id="nnoOutletManual" placeholder="Ali vpiši naziv izvoda ročno ..." autocomplete="off" style="margin-top:8px"><div id="nnoOutletHint" style="font-size:12px;color:#687a88;margin-top:6px">Pripadajoče izvode ti aplikacija ponudi sama. Dotakni se želenega ali vpiši svojega.</div></div>
+      <div class="field" id="nnoOutletField" style="display:none"><label>NAZIV IZVODA (neobvezno)</label><select id="nnoOutlet"><option value="">Izberi pripadajoči izvod ...</option></select><div id="nnoOutletChoices" style="display:none;max-height:185px;overflow-y:auto;margin-top:8px;border:1px solid #d4e1e9;border-radius:9px;padding:5px"></div><input id="nnoOutletManual" placeholder="Ali vpiši naziv izvoda ročno ..." autocomplete="off" style="margin-top:8px"><label style="margin-top:9px">ŠTEVILKA IZVODA (neobvezno)</label><input id="nnoOutletCode" placeholder="Samodejno ob izbiri ali vpiši številko ..." inputmode="numeric" autocomplete="off"><div id="nnoOutletHint" style="font-size:12px;color:#687a88;margin-top:6px">Pripadajoče izvode ti aplikacija ponudi sama. Dotakni se želenega ali vpiši svojega.</div></div>
       <div class="field"><label>Vrsta okvare</label><select id="faultType"></select><input id="faultTypeCustom" placeholder="Vpiši drugo vrsto okvare ..."></div>
       <div class="field"><label>Napaka / opravilo</label><select id="faultDetail"></select><input id="faultDetailCustom" placeholder="Vpiši drugo napako / opravilo ..."></div>
       <div class="field"><label>Prioriteta</label><select id="priority"><option>kritično</option><option>visoka</option><option selected>normalna</option><option>nizka</option></select></div>
@@ -1152,7 +1152,7 @@ function nnoKey(name){
     .replace(/^\s*(?:NNO\s*)?(?:TP\s*)?[-\s]*/,'').replace(/[^A-Z0-9]/g,'');
 }
 function updateNnoOutlets(selectedCode,selectedName){
-  var field=el('nnoOutletField'),sel=el('nnoOutlet'),manual=el('nnoOutletManual'),choices=el('nnoOutletChoices');
+  var field=el('nnoOutletField'),sel=el('nnoOutlet'),manual=el('nnoOutletManual'),codeField=el('nnoOutletCode'),choices=el('nnoOutletChoices');
   var requestedCode=selectedCode===undefined?(sel.dataset.pendingCode||sel.value||''):String(selectedCode||'');
   var requestedName=selectedName===undefined?(manual.value||sel.dataset.pendingName||''):String(selectedName||'');
   var assetName=String(el('assetName').value||'').trim();
@@ -1163,6 +1163,7 @@ function updateNnoOutlets(selectedCode,selectedName){
     sel.dataset.pendingName='';
     sel.value='';
     manual.value='';
+    codeField.value='';
     choices.innerHTML='';
     choices.style.display='none';
     return;
@@ -1176,6 +1177,7 @@ function updateNnoOutlets(selectedCode,selectedName){
   var matched=options.find(function(x){return String(x[0])===requestedCode});
   sel.value=matched?String(matched[0]):'';
   manual.value=matched?String(matched[1]):requestedName;
+  codeField.value=matched?String(matched[0]):requestedCode;
   // Pripadajoči izvodi so takoj vidni in jih je mogoče izbrati z enim dotikom.
   choices.innerHTML=options.map(function(x){
     var chosen=sel.value===String(x[0]);
@@ -1188,6 +1190,7 @@ function updateNnoOutlets(selectedCode,selectedName){
       if(!chosen)return;
       sel.value=String(chosen[0]);
       manual.value=String(chosen[1]);
+      codeField.value=String(chosen[0]);
       sel.dataset.pendingCode='';
       sel.dataset.pendingName='';
       nnoHighlightChoice();
@@ -1252,19 +1255,21 @@ function nnoHighlightChoice(){
 function nnoSelectedFeed(){
   var assetName=String(el('assetName').value||'').trim();
   if(!/^NNO(?:\s|$)/i.test(assetName))return null;
-  var name=el('nnoOutletManual').value.trim();
-  if(!name)return null;
+  var name=el('nnoOutletManual').value.trim(),code=el('nnoOutletCode').value.trim();
+  if(!name&&!code)return null;
   var asset=findAssetByName(assetName),sel=el('nnoOutlet');
   var options=asset&&nnoFeeders?nnoFeeders[nnoKey(asset.name)]||[]:[];
-  var byCode=options.find(function(x){return String(x[0])===sel.value});
-  if(byCode&&String(byCode[1]).trim()===name)return byCode;
-  // Če uporabnik vpiše natanko enega od znanih izvodov, ohranimo njegovo šifro.
+  var selected=options.find(function(x){return String(x[0])===sel.value});
+  if(selected&&String(selected[1]).trim()===name&&String(selected[0])===code)return selected;
+  // Ob ročnem vpisu že znanega naziva brez številke pripadajočo šifro najdemo sami.
   var sameName=options.filter(function(x){return String(x[1]).trim().toUpperCase()===name.toUpperCase()});
-  if(sameName.length===1)return sameName[0];
-  // Pri urejanju med začasnim izpadom seznama ne izgubimo že shranjene šifre.
-  if(!nnoFeeders&&sel.dataset.pendingCode&&sel.dataset.pendingName===name)
+  if(sameName.length===1&&(!code||String(sameName[0][0])===code))return sameName[0];
+  var codeMatch=options.find(function(x){return String(x[0])===code});
+  if(!name&&codeMatch)return codeMatch;
+  // V času počasnega nalaganja ne izgubimo že shranjene številke izvoda.
+  if(!nnoFeeders&&!code&&sel.dataset.pendingCode&&sel.dataset.pendingName===name)
     return [sel.dataset.pendingCode,name];
-  return [null,name];
+  return [code||null,name||null];
 }
 function updateAssetCode(){
   var a=findAssetByName(el('assetName').value);
@@ -1280,6 +1285,7 @@ function initTypes(){
     var options=asset&&nnoFeeders?nnoFeeders[nnoKey(asset.name)]||[]:[];
     var chosen=options.find(function(x){return String(x[0])===el('nnoOutlet').value});
     el('nnoOutletManual').value=chosen?String(chosen[1]):'';
+    el('nnoOutletCode').value=chosen?String(chosen[0]):'';
     nnoHighlightChoice();
     this.dataset.pendingCode='';
     this.dataset.pendingName='';
@@ -1287,9 +1293,19 @@ function initTypes(){
   el('nnoOutletManual').oninput=function(){
     var sel=el('nnoOutlet');
     sel.value='';
+    el('nnoOutletCode').value='';
     nnoHighlightChoice();
     sel.dataset.pendingCode='';
     sel.dataset.pendingName=this.value;
+  };
+  el('nnoOutletCode').oninput=function(){
+    var sel=el('nnoOutlet');
+    if(sel.value&&sel.value!==this.value.trim()){
+      sel.value='';
+      nnoHighlightChoice();
+    }
+    sel.dataset.pendingCode=this.value.trim();
+    sel.dataset.pendingName=el('nnoOutletManual').value;
   };
   loadNnoFeeders();
   el('faultType').innerHTML='<option value="">Izberi ...</option>'+TYPES.map(function(x){return '<option>'+esc(x)+'</option>'}).join('');
@@ -1971,6 +1987,7 @@ function resetForm(){
   el('nnoOutlet').dataset.pendingCode='';
   el('nnoOutlet').dataset.pendingName='';
   el('nnoOutletManual').value='';
+  el('nnoOutletCode').value='';
   el('nnoOutletChoices').innerHTML='';
   el('nnoOutletChoices').style.display='none';
   el('nnoOutletField').style.display='none';
@@ -2310,6 +2327,6 @@ window.addEventListener('online',netState);window.addEventListener('offline',net
 initTypes();initMap();renderAll();netState();setTimeout(function(){gps(null,true)},500);startAuth().catch(function(e){console.error(e);showAuth()});
 })();
 </script>
-<script src="porocila.js?v=9"></script>
+<script src="porocila.js?v=10"></script>
 </body>
 </html>
