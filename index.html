@@ -1332,7 +1332,8 @@ var NET_DEFAULT=[{name:'SI.GURS.KGI:LINIJE_ELEKTRICNA_ENERGIJA_G',title:'Elektri
 var NET_GRID=0.02,NET_CACHE_MS=24*60*60*1000;
 var netSel=[NET_DEFAULT[0].name,NET_DEFAULT[1].name];
 var netOverlay=null,netWms=null,netTimer=null,netErrShown=false;
-var netTileLayers={},netTileData={},netTileIncomplete={},netWanted={},netLoading={},netQueue=[],netWorkers=0,netDbPromise=null;
+var netTileLayers={},netTileData={},netTileIncomplete={},netTileSources={},netWanted={},netLoading={},netQueue=[],netWorkers=0,netDbPromise=null;
+var netRetryTimers={},netRetryAttempts={},netCachePending={};
 function netCaps(){
   el('netStatus').textContent='Vodi rdeče • točke črne • GURS';
 }
@@ -1351,7 +1352,7 @@ function netDb(){
   return netDbPromise;
 }
 function netCacheGet(key){
-  return netDb().then(function(db){
+  var reading=netDb().then(function(db){
     return new Promise(function(resolve){
       try{
         var tx=db.transaction('tiles','readonly'),rq=tx.objectStore('tiles').get(key);
@@ -1360,6 +1361,10 @@ function netCacheGet(key){
       }catch(e){resolve(null)}
     });
   }).catch(function(){return null});
+  // Če je IndexedDB na iPhonu blokiran, po 1,5 sekunde poskusimo GURS.
+  return Promise.race([reading,new Promise(function(resolve){
+    setTimeout(function(){resolve(null)},1500);
+  })]);
 }
 function netCachePut(key,data){
   return netDb().then(function(db){
@@ -1404,7 +1409,7 @@ function netDrawTile(key,data){
     pane:'netPane',
     interactive:false,
     // Vodi ostanejo rdeči; točke se izrišejo kot črni krogi.
-    style:function(){return {color:'#d50000',weight:3,opacity:.94,lineCap:'round',lineJoin:'round'}},
+    style:function(){return {color:'#ff0000',weight:3,opacity:.96,lineCap:'round',lineJoin:'round'}},
     pointToLayer:function(feature,latlng){
       return L.circleMarker(latlng,{pane:'netPane',interactive:false,radius:3.5,color:'#000000',weight:1.2,fillColor:'#000000',fillOpacity:1});
     }
@@ -1419,14 +1424,56 @@ function netRemoveFarTiles(){
       try{map.removeLayer(layer)}catch(e){}
     }
   });
+  Object.keys(netRetryTimers).forEach(function(key){
+    if(!netWanted[key])netStopRetry(key);
+  });
+}
+// Ponovni poskus le za vidne kvadrate; daljši presledki preprečijo
+// preobremenitev GURS, če je storitev začasno nedosegljiva.
+function netScheduleRetry(t){
+  if(!netWanted[t.key]||netRetryTimers[t.key])return;
+  var attempt=(netRetryAttempts[t.key]||0)+1;
+  netRetryAttempts[t.key]=attempt;
+  var delay=Math.min(60000,3000*Math.pow(2,Math.min(attempt-1,5)));
+  netRetryTimers[t.key]=setTimeout(function(){
+    delete netRetryTimers[t.key];
+    if(!netWanted[t.key]||netLoading[t.key]||netQueue.some(function(x){return x.key===t.key}))return;
+    netQueue.push(t);
+    netPump();
+  },delay);
+}
+function netStopRetry(key){
+  if(netRetryTimers[key])clearTimeout(netRetryTimers[key]);
+  delete netRetryTimers[key];
+  delete netRetryAttempts[key];
+}
+function netFetchFeatures(url,title){
+  var controller=typeof AbortController!=='undefined'?new AbortController():null;
+  var timeoutId;
+  var timeout=new Promise(function(resolve,reject){
+    timeoutId=setTimeout(function(){
+      if(controller)controller.abort();
+      reject(new Error('GURS: predolg odziv '+title));
+    },14000);
+  });
+  var options={cache:'default'};
+  if(controller)options.signal=controller.signal;
+  var request=Promise.resolve().then(function(){return fetch(url,options)}).then(function(r){
+    if(!r.ok)throw new Error('WFS '+title+': '+r.status);
+    return r.json();
+  }).then(function(data){
+    if(!data||data.type!=='FeatureCollection'||!Array.isArray(data.features))
+      throw new Error('Neveljaven WFS odgovor za '+title);
+    return data.features;
+  });
+  return Promise.race([request,timeout]).finally(function(){clearTimeout(timeoutId)});
 }
 function netFetchTile(t){
   if(netLoading[t.key])return;
   netLoading[t.key]=true;
   var sw=toD96(t.west,t.south),ne=toD96(t.east,t.north);
   var bbox=[sw[0],sw[1],ne[0],ne[1]].join(',');
-  // Dva GURS vira naložimo vzporedno in ju izrišemo kot en Leaflet sloj.
-  // Če en vir začasno ni dosegljiv, ohranimo prikaz drugega.
+  // Vsak vir hrani svoj del podatkov: ob izpadu enega ne izgine drugi.
   var requests=NET_DEFAULT.slice(0,2).map(function(source){
     var url=NET_WFS+
       '?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature'+
@@ -1434,23 +1481,18 @@ function netFetchTile(t){
       '&OUTPUTFORMAT='+encodeURIComponent('application/json')+
       '&SRSNAME=EPSG%3A4326'+
       '&BBOX='+encodeURIComponent(bbox+',EPSG:3794');
-    return fetch(url,{cache:'default'}).then(function(r){
-      if(!r.ok)throw new Error('WFS '+source.title+': '+r.status);
-      return r.json();
-    }).then(function(data){
-      if(!data||data.type!=='FeatureCollection'||!Array.isArray(data.features))
-        throw new Error('Neveljaven WFS odgovor za '+source.title);
-      return data.features;
-    });
+    return netFetchFeatures(url,source.title);
   });
   Promise.allSettled(requests).then(function(results){
-    var loaded=results.filter(function(r){return r.status==='fulfilled'});
-    if(!loaded.length)throw new Error('Elektro linij in točk ni mogoče naložiti');
-    var complete=loaded.length===requests.length;
-    var features=[];
-    loaded.forEach(function(r){features.push.apply(features,r.value)});
-    var combined={type:'FeatureCollection',features:features};
-    // Za stari delni prikaz ustvarimo svež sloj tudi pri kasnejšem uspešnem prenosu.
+    var sources=netTileSources[t.key]||[null,null],gotNew=false;
+    results.forEach(function(result,i){
+      if(result.status==='fulfilled'){sources[i]=result.value;gotNew=true}
+    });
+    if(!gotNew)throw new Error('GURS trenutno ni vrnil elektro linij ali točk');
+    netTileSources[t.key]=sources;
+    var complete=Array.isArray(sources[0])&&Array.isArray(sources[1]);
+    var combined={type:'FeatureCollection',features:(sources[0]||[]).concat(sources[1]||[])};
+    // Ob naložitvi manjkajočega vira osvežimo samo njegov sloj na zemljevidu.
     if(netTileLayers[t.key]){
       try{if(map&&map.hasLayer(netTileLayers[t.key]))map.removeLayer(netTileLayers[t.key])}catch(e){}
       delete netTileLayers[t.key];
@@ -1458,18 +1500,24 @@ function netFetchTile(t){
     netTileIncomplete[t.key]=!complete;
     netDrawTile(t.key,combined);
     if(complete){
+      netStopRetry(t.key);
       netCachePut(t.key,combined);
       netErrShown=false;
-    }else if(!netErrShown){
-      netErrShown=true;
-      if(el('netStatus'))el('netStatus').textContent='GURS: del omrežja ni dosegljiv. Poskusi premakniti zemljevid.';
-      results.forEach(function(r){if(r.status==='rejected')console.warn('GURS elektro:',r.reason)});
+      if(el('netStatus'))el('netStatus').textContent='Elektro vodi (rdeče) • točke (črne)';
+    }else{
+      netScheduleRetry(t);
+      if(!netErrShown){
+        netErrShown=true;
+        if(el('netStatus'))el('netStatus').textContent='GURS: nalagam manjkajoče podatke ...';
+      }
     }
   }).catch(function(err){
-    console.error('GURS elektro '+t.key+':',err);
+    console.warn('GURS elektro '+t.key+':',err);
+    netTileIncomplete[t.key]=true;
+    netScheduleRetry(t);
     if(!netErrShown){
       netErrShown=true;
-      if(el('netStatus'))el('netStatus').textContent='GURS elektro omrežje trenutno ni dosegljivo.';
+      if(el('netStatus'))el('netStatus').textContent='GURS ni dosegljiv. Omrežje se samodejno ponovno nalaga.';
     }
   }).finally(function(){
     delete netLoading[t.key];
@@ -1490,22 +1538,28 @@ function netLoadTile(t){
     netDrawTile(t.key,netTileData[t.key]);
     if(!netTileIncomplete[t.key])return;
   }
+  if(netCachePending[t.key])return;
+  netCachePending[t.key]=true;
   netCacheGet(t.key).then(function(cached){
     if(cached&&cached.data){
-      // Stari cache se pokaže takoj; če je prestar, se samo osveži v ozadju.
-      netDrawTile(t.key,cached.data);
-      if(Date.now()-(cached.ts||0)<NET_CACHE_MS)return;
+      // Ohranimo prikaz iz predpomnilnika, tudi kadar GURS trenutno ni dosegljiv.
+      if(!netTileData[t.key]){
+        netDrawTile(t.key,cached.data);
+        netTileIncomplete[t.key]=false;
+      }
+      if(Date.now()-(cached.ts||0)<NET_CACHE_MS&&!netTileIncomplete[t.key])return;
     }
-    if(!netLoading[t.key]&&!netQueue.some(function(x){return x.key===t.key})){
+    if(!netLoading[t.key]&&!netRetryTimers[t.key]&&!netQueue.some(function(x){return x.key===t.key})){
       netQueue.push(t);
       netPump();
     }
-  });
+  }).finally(function(){delete netCachePending[t.key]});
 }
 function netClear(){
   clearTimeout(netTimer);
   netWanted={};
   netQueue=[];
+  Object.keys(netRetryTimers).forEach(netStopRetry);
   if(netWms){try{map.removeLayer(netWms)}catch(e){}netWms=null}
   Object.keys(netTileLayers).forEach(function(k){
     try{if(map.hasLayer(netTileLayers[k]))map.removeLayer(netTileLayers[k])}catch(e){}
@@ -1543,7 +1597,7 @@ function refreshNet(){
       return;
     }
 
-    var needed=netNeededTiles(map.getBounds(),1);
+    var needed=netNeededTiles(map.getBounds(),0);
     var wanted={};
     needed.forEach(function(t){wanted[t.key]=true});
     netWanted=wanted;
@@ -1551,8 +1605,10 @@ function refreshNet(){
 
     // Najprej pokaži vse, kar je že v RAM-u, nato takoj preberi lokalni cache.
     needed.forEach(function(t){
-      if(netTileData[t.key])netDrawTile(t.key,netTileData[t.key]);
-      else netLoadTile(t);
+      if(netTileData[t.key]){
+        netDrawTile(t.key,netTileData[t.key]);
+        if(netTileIncomplete[t.key]&&!netRetryTimers[t.key])netLoadTile(t);
+      }else netLoadTile(t);
     });
 
     if(el('netStatus')&&!netErrShown)el('netStatus').textContent='Elektro vodi (rdeče) • točke (črne)';
