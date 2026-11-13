@@ -694,6 +694,29 @@ main{max-width:1400px;margin:auto;padding:9px}.view{display:none}.view.active{di
 #netList{overflow:auto;min-height:60px;border:1px solid var(--line);border-radius:8px;padding:4px}#netList label{display:flex;gap:8px;align-items:flex-start;padding:7px 4px;font-size:13px;border-bottom:1px solid #eef2f5}
 #netList input{width:auto;min-height:0;margin-top:2px}.netman{display:flex;gap:6px}.netman button{border:0;border-radius:8px;background:var(--b);color:#fff;padding:0 14px;font-weight:800}
 </style>
+<style id="jesensko-elektro-ozadje">
+/* Jesensko električarsko ozadje: izbrana slika 1; funkcionalni obrazci in zemljevid ostanejo nespremenjeni. */
+body{
+  background-color:#eadfce;
+  background-image:linear-gradient(180deg,rgba(246,248,250,.66),rgba(244,247,249,.83)),url('jesensko-elektricarsko-ozadje.webp');
+  background-position:center center;
+  background-size:cover;
+  background-repeat:no-repeat;
+  background-attachment:fixed;
+}
+#authGate{
+  background-color:#192c3d!important;
+  background-image:linear-gradient(180deg,rgba(13,30,46,.35),rgba(13,30,46,.58)),url('jesensko-elektricarsko-ozadje.webp')!important;
+  background-position:center center!important;
+  background-size:cover!important;
+  background-repeat:no-repeat!important;
+}
+#authGate > div{
+  background:rgba(255,255,255,.96)!important;
+  box-shadow:0 18px 65px rgba(0,0,0,.32)!important;
+}
+@media(max-width:600px){body{background-attachment:scroll}}
+</style>
 </head>
 <body>
 <div id="authGate" style="position:fixed;inset:0;background:#eef3f7;z-index:100000;display:flex;align-items:center;justify-content:center;padding:18px">
