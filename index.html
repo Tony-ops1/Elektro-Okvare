@@ -858,7 +858,7 @@ body{
       <input type="hidden" id="lat">
       <input type="hidden" id="lng">
       <div class="field"><label>Datum in ura</label><input id="reportedAt" type="datetime-local" required></div>
-      <div class="field"><label>NAZIV SREDSTVA</label><input id="assetName" list="assetNameList" placeholder="Vpiši ali izberi sredstvo ..." autocomplete="off"><datalist id="assetNameList"></datalist><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><button type="button" class="btn secondary assetCategoryBtn" data-category="DV" style="min-height:33px;padding:5px 13px;font-size:12px">DV</button><button type="button" class="btn secondary assetCategoryBtn" data-category="KB" style="min-height:33px;padding:5px 13px;font-size:12px">KB</button><button type="button" class="btn secondary assetCategoryBtn" data-category="20KV" style="min-height:33px;padding:5px 13px;font-size:12px">20 kV</button></div><div id="assetNameChoices" style="display:none;max-height:255px;overflow-y:auto;border:1px solid #c7d2db;border-radius:10px;background:white;margin-top:6px;padding:5px"></div><label style="margin-top:8px">ŠIFRA SREDSTVA</label><input id="assetCode" placeholder="Šifra sredstva" readonly></div>
+      <div class="field"><label>NAZIV SREDSTVA</label><input id="assetName" placeholder="Začni vpisovati naziv sredstva ..." autocomplete="off"><div id="assetNameChoices" style="display:none;max-height:255px;overflow-y:auto;border:1px solid #c7d2db;border-radius:10px;background:white;margin-top:6px;padding:5px"></div><label style="margin-top:8px">ŠIFRA SREDSTVA</label><input id="assetCode" placeholder="Šifra sredstva" readonly></div>
       <div class="field" id="nnoOutletField" style="display:none"><label>NAZIV IZVODA (neobvezno)</label><select id="nnoOutlet"><option value="">Izberi pripadajoči izvod ...</option></select><div id="nnoOutletChoices" style="display:none;max-height:185px;overflow-y:auto;margin-top:8px;border:1px solid #d4e1e9;border-radius:9px;padding:5px"></div><input id="nnoOutletManual" placeholder="Ali vpiši naziv izvoda ročno ..." autocomplete="off" style="margin-top:8px"><label style="margin-top:9px">ŠTEVILKA IZVODA (neobvezno)</label><input id="nnoOutletCode" placeholder="Samodejno ob izbiri ali vpiši številko ..." inputmode="numeric" autocomplete="off"><div id="nnoOutletHint" style="font-size:12px;color:#687a88;margin-top:6px">Pripadajoče izvode ti aplikacija ponudi sama. Dotakni se želenega ali vpiši svojega.</div></div>
       <div class="field"><label>Vrsta okvare</label><select id="faultType"></select><input id="faultTypeCustom" placeholder="Vpiši drugo vrsto okvare ..."></div>
       <div class="field"><label>Napaka / opravilo</label><select id="faultDetail"></select><input id="faultDetailCustom" placeholder="Vpiši drugo napako / opravilo ..."></div>
@@ -1307,22 +1307,28 @@ function updateAssetCode(){
   el('assetCode').value=a?a.code:'';
   updateNnoOutlets('','');
 }
-var assetChoiceCategory='';
+function assetSearchKey(value){
+  return String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().trim();
+}
 function renderAssetChoices(){
-  var box=el('assetNameChoices'),query=String(el('assetName').value||'').trim().toUpperCase();
+  var box=el('assetNameChoices'),query=assetSearchKey(el('assetName').value);
+  if(!query){box.style.display='none';box.innerHTML='';return;}
   var options=ASSETS.map(function(asset,index){return {asset:asset,index:index}}).filter(function(entry){
-    var name=String(entry.asset.name||'');
-    if(assetChoiceCategory==='DV')return /^DV(?:\\s|-|$)/i.test(name);
-    if(assetChoiceCategory==='KB')return /^KB(?:\\s|-|$)/i.test(name);
-    if(assetChoiceCategory==='20KV')return /^20KV\\b/i.test(name);
-    return query.length>=2&&(name.toUpperCase().indexOf(query)>=0||String(entry.asset.code||'').indexOf(query)>=0);
+    return assetSearchKey(entry.asset.name).indexOf(query)>=0||String(entry.asset.code||'').indexOf(query)>=0;
   });
-  if(!assetChoiceCategory&&query.length<2){box.style.display='none';box.innerHTML='';return;}
+  // Najprej sredstvo, katerega naziv se začne z vpisanim besedilom (DV, KB, NNO, TP).
+  options.sort(function(a,b){
+    function rank(entry){
+      var name=assetSearchKey(entry.asset.name);
+      return name.indexOf(query)===0?0:(name.indexOf(' '+query)>=0?1:2);
+    }
+    return rank(a)-rank(b)||a.index-b.index;
+  });
   var display=options.slice(0,70);
   box.innerHTML=display.length?display.map(function(item){
     return '<button type="button" data-asset-index="'+item.index+'" style="display:block;width:100%;text-align:left;border:1px solid #d7e0e7;border-radius:8px;background:#fff;color:#17232e;padding:9px;margin:3px 0;cursor:pointer;font:inherit;font-size:13px">'+esc(item.asset.name)+' <span style="color:#687a88;font-size:12px">('+esc(item.asset.code)+')</span></button>';
   }).join(''):'<div style="padding:10px;color:#687a88">Ni najdenih sredstev.</div>';
-  if(options.length>display.length)box.innerHTML+='<div style="padding:8px;font-size:12px;color:#687a88">Za manj zadetkov vpiši natančnejši naziv.</div>';
+  if(options.length>display.length)box.innerHTML+='<div style="padding:8px;font-size:12px;color:#687a88">Vpiši več črk za natančnejši izbor.</div>';
   box.style.display='block';
   box.querySelectorAll('button[data-asset-index]').forEach(function(button){
     button.onclick=function(){
@@ -1330,22 +1336,17 @@ function renderAssetChoices(){
       if(!asset)return;
       el('assetName').value=asset.name;
       updateAssetCode();
-      assetChoiceCategory='';
       box.style.display='none';
       box.innerHTML='';
     };
   });
 }
 function initTypes(){
-  el('assetNameList').innerHTML=ASSETS.map(function(x){return '<option value="'+esc(x.name)+'" label="'+esc(x.code)+'"></option>'}).join('');
-  el('assetName').oninput=function(){assetChoiceCategory='';updateAssetCode();renderAssetChoices()};
+  el('assetName').oninput=function(){updateAssetCode();renderAssetChoices()};
   el('assetName').onchange=function(){
     updateAssetCode();
-    if(findAssetByName(this.value)){el('assetNameChoices').style.display='none';assetChoiceCategory=''}
+    if(findAssetByName(this.value))el('assetNameChoices').style.display='none';
   };
-  document.querySelectorAll('.assetCategoryBtn').forEach(function(button){
-    button.onclick=function(){assetChoiceCategory=this.dataset.category;renderAssetChoices()};
-  });
   el('nnoOutlet').onchange=function(){
     var asset=findAssetByName(el('assetName').value);
     var options=asset&&nnoFeeders?nnoFeeders[nnoKey(asset.name)]||[]:[];
@@ -2049,7 +2050,6 @@ function resetForm(){
   el('clientRequestId').value=requestUuid();
   el('reportedAt').value=nowInput();
   el('assetCode').value='';
-  assetChoiceCategory='';
   el('assetNameChoices').style.display='none';
   el('assetNameChoices').innerHTML='';
   el('nnoOutlet').value='';
