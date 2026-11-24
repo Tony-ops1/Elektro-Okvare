@@ -764,6 +764,7 @@ body{
     <button data-view="archiveView" id="archiveNav" style="display:none">📦 ARHIV</button>
     <button data-view="usersView" id="usersNav" style="display:none">👥 UPORABNIKI</button>
     <button data-view="weatherView" id="weatherNav">🌦️ VREME</button>
+    <button type="button" data-view="outagesView">⚡ AKTUALNI IZPADI</button>
   </nav>
 </header>
 
@@ -816,6 +817,15 @@ body{
       <div class="field" style="justify-content:end"><button type="button" class="btn primary" id="userAddBtn">Dodaj uporabnika</button></div>
     </div>
     <div id="usersList"></div>
+  </div>
+</section>
+
+<section id="outagesView" class="view">
+  <div class="panel">
+    <h2 style="margin-top:0">⚡ Aktualni izpadi električne energije</h2>
+    <p>Uradni zemljevid Elektro Ljubljana za celotno distribucijsko območje: okvare in načrtovane prekinitve napajanja.</p>
+    <a class="btn primary" style="display:inline-flex;align-items:center;justify-content:center;min-height:48px;text-decoration:none;max-width:100%;white-space:normal;text-align:center" href="https://www.elektro-ljubljana.si/stanje-na-omrezju" target="_blank" rel="noopener noreferrer">🗺️ Odpri uradni zemljevid izpadov ↗</a>
+    <p style="font-size:13px;color:#687a88">Vir: Elektro Ljubljana. Podatki so informativni in lahko časovno zamaknjeni. Povezava odpre uradno stran v novem zavihku; aplikacija podatkov ne zajema samodejno.</p>
   </div>
 </section>
 
