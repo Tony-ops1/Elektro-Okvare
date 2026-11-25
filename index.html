@@ -786,6 +786,8 @@ body{
     <div id="netPanel" style="display:none">
       <div class="nethead"><b>⚡ Elektro omrežje (GURS)</b><button id="netClose" type="button">✕</button></div>
       <div id="netStatus" class="netstat">Enoten prikaz elektro omrežja</div>
+      <button type="button" id="netDiagBtn" style="padding:7px;border:1px solid #ccd6df;border-radius:7px;background:#f5f7fa;color:#123a63">Diagnostika napetosti GURS</button>
+      <textarea id="netDiagOutput" readonly aria-label="Diagnostika javnih atributov GURS" style="display:none;width:100%;min-height:90px;max-height:120px;font-size:11px;resize:vertical"></textarea>
       <div style="font-size:13px;line-height:1.7"><span style="color:#d50000;font-weight:900">━━</span> Vodi (rdeče) &nbsp; <span style="color:#000;font-weight:900">●</span> Točke (črne)</div>
     </div>
   </div>
@@ -2277,6 +2279,29 @@ el('gpsBtn').onclick=function(){gps(null,true)}
 el('orthoBtn').onclick=function(){orthoEnabled=!orthoEnabled;this.style.opacity=orthoEnabled?'1':'0.45';if(!orthoEnabled){if(orthoOverlay){try{map.removeLayer(orthoOverlay)}catch(e){}orthoOverlay=null;}if(orthoFallbackTiles&&map.hasLayer(orthoFallbackTiles)){try{map.removeLayer(orthoFallbackTiles)}catch(e){}}toast('Ortofoto izklopljen')}else{orthoErrorShown=false;toast('Ortofoto vklopljen');refreshOrtho()}}
 el('netBtn').onclick=function(){var p=el('netPanel'),show=p.style.display==='none';p.style.display=show?'flex':'none';if(show)netCaps(false)};
 el('netClose').onclick=function(){el('netPanel').style.display='none'};
+el('netDiagBtn').onclick=function(){
+  var out=el('netDiagOutput'), fields=Object.create(null), total=0, samples=[];
+  Object.keys(netWanted).forEach(function(key){
+    var data=netTileData[key];
+    if(!data||!Array.isArray(data.features))return;
+    data.features.forEach(function(f){
+      if(!f.geometry||['LineString','MultiLineString'].indexOf(f.geometry.type)<0)return;
+      total++;
+      var p=f.properties||{};
+      Object.keys(p).forEach(function(k){
+        var v=p[k], entry=fields[k]||(fields[k]={present:0,values:[]});
+        if(v!==null&&v!==undefined&&v!=='')entry.present++;
+        var str=JSON.stringify(v);
+        if(str!==undefined&&entry.values.length<12&&entry.values.indexOf(str)<0)entry.values.push(str);
+      });
+      if(samples.length<2)samples.push(p);
+    });
+  });
+  out.style.display='block';
+  out.value=total?JSON.stringify({vodi_v_vidnih_kvadratih:total,atributi:fields,primera:samples},null,2):'Ni naloženih vektorskih vodov. Približaj karto (15+) in počakaj, da se rdeči vodi naložijo, nato ponovi.';
+  out.focus();out.select();
+};
+
 el('faultType').onchange=function(){updateFaultDetails()}
 el('mapAddressSearchBtn').onclick=function(){geocodeAddress().catch(function(){})}
 el('mapSearchAddress').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();geocodeAddress().catch(function(){})}})
