@@ -786,7 +786,7 @@ body{
     <div id="netPanel" style="display:none">
       <div class="nethead"><b>⚡ Elektro omrežje (GURS)</b><button id="netClose" type="button">✕</button></div>
       <div id="netStatus" class="netstat">Enoten prikaz elektro omrežja</div>
-      <div style="font-size:13px;line-height:1.7"><span style="color:#dc2626;font-weight:900">━━</span> VN &nbsp; <span style="color:#2563eb;font-weight:900">━━</span> SN &nbsp; <span style="color:#16a34a;font-weight:900">━━</span> NN &nbsp; <span style="color:#888888;font-weight:900">━━</span> Neznano &nbsp; <span style="color:#000;font-weight:900">●</span> Točke (črne)</div>
+      <div style="font-size:13px;line-height:1.7"><span style="color:#d50000;font-weight:900">━━</span> Vodi (rdeče) &nbsp; <span style="color:#000;font-weight:900">●</span> Točke (črne)</div>
     </div>
   </div>
 </section>
@@ -1568,7 +1568,7 @@ var netOverlay=null,netWms=null,netTimer=null,netErrShown=false;
 var netTileLayers={},netTileData={},netTileIncomplete={},netTileSources={},netWanted={},netLoading={},netQueue=[],netWorkers=0,netDbPromise=null;
 var netRetryTimers={},netRetryAttempts={},netCachePending={};
 function netCaps(){
-  el('netStatus').textContent='VN rdeče • SN modro • NN zeleno • neznano sivo • GURS';
+  el('netStatus').textContent='Vodi rdeče • točke črne • GURS';
 }
 function netDb(){
   if(netDbPromise)return netDbPromise;
@@ -1641,8 +1641,8 @@ function netDrawTile(key,data){
   var layer=L.geoJSON(data,{
     pane:'netPane',
     interactive:false,
-    // Vodi po ATR2; neznana napetost siva, točke črne.
-    style:function(feature){var p=feature&&feature.properties||{};var k=Object.keys(p).find(function(key){return key.toUpperCase()==='ATR2'});var v=k===undefined?'':String(p[k]).trim();var colors={'1':'#dc2626','2':'#dc2626','3':'#dc2626','4':'#2563eb','5':'#2563eb','6':'#2563eb','7':'#2563eb','10':'#2563eb','8':'#16a34a','9':'#888888'};return {color:colors[v]||'#888888',weight:3,opacity:.96,lineCap:'round',lineJoin:'round'}},
+    // Vodi ostanejo rdeči; točke se izrišejo kot črni krogi.
+    style:function(){return {color:'#ff0000',weight:3,opacity:.96,lineCap:'round',lineJoin:'round'}},
     pointToLayer:function(feature,latlng){
       return L.circleMarker(latlng,{pane:'netPane',interactive:false,radius:3.5,color:'#000000',weight:1.2,fillColor:'#000000',fillOpacity:1});
     }
@@ -1736,7 +1736,7 @@ function netFetchTile(t){
       netStopRetry(t.key);
       netCachePut(t.key,combined);
       netErrShown=false;
-      if(el('netStatus'))el('netStatus').textContent='VN rdeče • SN modro • NN zeleno • neznano sivo • točke črne';
+      if(el('netStatus'))el('netStatus').textContent='Elektro vodi (rdeče) • točke (črne)';
     }else{
       netScheduleRetry(t);
       if(!netErrShown){
@@ -1844,7 +1844,7 @@ function refreshNet(){
       }else netLoadTile(t);
     });
 
-    if(el('netStatus')&&!netErrShown)el('netStatus').textContent='VN rdeče • SN modro • NN zeleno • neznano sivo • točke črne';
+    if(el('netStatus')&&!netErrShown)el('netStatus').textContent='Elektro vodi (rdeče) • točke (črne)';
   },70);
 }
 function iconFor(x){var c=color(x);return L.divIcon({className:'',html:'<div style="width:24px;height:24px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:'+c+';border:3px solid white;box-shadow:0 2px 6px #0006"><span style="display:block;width:6px;height:6px;background:#fff;border-radius:50%;margin:6px"></span></div>',iconSize:[24,24],iconAnchor:[12,24]})}
